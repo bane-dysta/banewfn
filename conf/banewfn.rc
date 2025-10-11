@@ -1,0 +1,4 @@
+# banewfn.rc
+Multiwfnpath=Multiwfn
+confpath=/home/bane/scripts/programs/banewfn/conf
+cores=4
