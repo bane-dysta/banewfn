@@ -1,4 +1,5 @@
 #include "config.h"
+#include "utils.h"
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
@@ -14,12 +15,9 @@
 #endif
 #endif
 
-// Utility function: trim whitespace from string
+// Utility function: trim whitespace from string (deprecated - use Utils::trim instead)
 std::string trim(const std::string& str) {
-    size_t first = str.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return "";
-    size_t last = str.find_last_not_of(" \t\r\n");
-    return str.substr(first, last - first + 1);
+    return Utils::trim(str);
 }
 
 // Utility function: expand ~ to HOME path
@@ -72,10 +70,9 @@ std::string getExecutableDir() {
 #endif
 }
 
-// Utility function: check if file exists
+// Utility function: check if file exists (deprecated - use Utils::fileExists instead)
 bool fileExists(const std::string& filepath) {
-    std::ifstream file(filepath);
-    return file.good();
+    return Utils::fileExists(filepath);
 }
 
 // Utility function: find config file with priority

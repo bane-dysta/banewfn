@@ -12,16 +12,11 @@
 #include "config.h"
 #include "input.h"
 #include "ui.h"
+#include "utils.h"
 
-// Utility function: split string
+// Utility function: split string (deprecated - use Utils::split instead)
 std::vector<std::string> split(const std::string& str, char delimiter) {
-    std::vector<std::string> tokens;
-    std::stringstream ss(str);
-    std::string token;
-    while (std::getline(ss, token, delimiter)) {
-        tokens.push_back(trim(token));
-    }
-    return tokens;
+    return Utils::split(str, delimiter);
 }
 
 class MultiwfnScriptGenerator {

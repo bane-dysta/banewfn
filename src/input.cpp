@@ -1,18 +1,13 @@
 #include "input.h"
 #include "config.h"
+#include "utils.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 
-// Utility function: split string
+// Utility function: split string (deprecated - use Utils::split instead)
 std::vector<std::string> InputParser::split(const std::string& str, char delimiter) {
-    std::vector<std::string> tokens;
-    std::stringstream ss(str);
-    std::string token;
-    while (std::getline(ss, token, delimiter)) {
-        tokens.push_back(::trim(token));
-    }
-    return tokens;
+    return Utils::split(str, delimiter);
 }
 
 // Parse inp file, return all module tasks and optional wfn file

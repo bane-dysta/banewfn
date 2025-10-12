@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "utils.h"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -56,8 +57,7 @@ std::string UI::requestWavefunctionFile() {
 }
 
 bool UI::validateFile(const std::string& filepath) {
-    std::ifstream file(filepath);
-    return file.good();
+    return Utils::validateFile(filepath);
 }
 
 void UI::printFileError(const std::string& filepath) {
@@ -72,34 +72,5 @@ std::string UI::getUserInput(const std::string& prompt) {
 }
 
 std::string UI::trimQuotes(const std::string& str) {
-    if (str.empty()) {
-        return str;
-    }
-    
-    size_t start = 0;
-    size_t end = str.length();
-    
-    // Trim leading whitespace
-    while (start < end && std::isspace(str[start])) {
-        start++;
-    }
-    
-    // Trim trailing whitespace
-    while (end > start && std::isspace(str[end - 1])) {
-        end--;
-    }
-    
-    // If string is empty after trimming whitespace, return empty
-    if (start >= end) {
-        return "";
-    }
-    
-    // Check for quotes at the beginning and end
-    if ((str[start] == '"' && str[end - 1] == '"') || 
-        (str[start] == '\'' && str[end - 1] == '\'')) {
-        start++;
-        end--;
-    }
-    
-    return str.substr(start, end - start);
+    return Utils::trimQuotes(str);
 }
