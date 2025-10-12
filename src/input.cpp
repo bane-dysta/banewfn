@@ -29,7 +29,10 @@ std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn
     while (std::getline(file, line)) {
         line = ::trim(line);
         
-        if (line.empty() || line[0] == '#') continue;
+        // 去除行内注释
+        line = Utils::removeInlineComment(line);
+        
+        if (line.empty()) continue;
         
         // Check for wfn=xx format at the beginning of file
         if (line.find("wfn=") == 0 && currentTask.moduleName.empty()) {

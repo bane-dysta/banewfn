@@ -44,6 +44,13 @@ public:
      * @return 文件存在返回true，否则返回false
      */
     static bool validateFile(const std::string& filepath);
+    
+    /**
+     * @brief 去除字符串中的行内注释（#号及其后面的内容）
+     * @param str 输入字符串
+     * @return 去除行内注释后的字符串
+     */
+    static std::string removeInlineComment(const std::string& str);
 };
 
 #endif // UTILS_H

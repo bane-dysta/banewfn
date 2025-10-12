@@ -45,3 +45,11 @@ bool Utils::fileExists(const std::string& filepath) {
 bool Utils::validateFile(const std::string& filepath) {
     return fileExists(filepath);
 }
+
+std::string Utils::removeInlineComment(const std::string& str) {
+    size_t commentPos = str.find('#');
+    if (commentPos != std::string::npos) {
+        return trim(str.substr(0, commentPos));
+    }
+    return str;
+}

@@ -137,7 +137,11 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile) {
     std::string line;
     while (std::getline(file, line)) {
         line = trim(line);
-        if (line.empty() || line[0] == '#') continue;
+        
+        // 去除行内注释
+        line = Utils::removeInlineComment(line);
+        
+        if (line.empty()) continue;
         
         size_t pos = line.find('=');
         if (pos != std::string::npos) {
@@ -193,7 +197,10 @@ bool ConfigManager::loadModuleConfig(const std::string& moduleName) {
     while (std::getline(file, line)) {
         line = trim(line);
         
-        if (line.empty() || line[0] == '#') continue;
+        // 去除行内注释
+        line = Utils::removeInlineComment(line);
+        
+        if (line.empty()) continue;
         
         // Section header [section_name]
         if (line[0] == '[' && line[line.length()-1] == ']') {
@@ -278,14 +285,34 @@ std::string replacePlaceholders(const std::string& cmd,
     size_t pos = 0;
     while ((pos = result.find('$', pos)) != std::string::npos) {
         size_t endPos = pos + 1;
-        while (endPos < result.length() && 
-               (isalnum(result[endPos]) || result[endPos] == '_')) {
-            endPos++;
+        std::string varName;
+        
+        // Check for ${variable} syntax
+        if (endPos < result.length() && result[endPos] == '{') {
+            // Find closing brace
+            size_t braceStart = endPos + 1;
+            size_t braceEnd = result.find('}', braceStart);
+            if (braceEnd != std::string::npos) {
+                varName = result.substr(braceStart, braceEnd - braceStart);
+                endPos = braceEnd + 1;
+            } else {
+                // No closing brace found, treat as regular $variable
+                while (endPos < result.length() && 
+                       (isalnum(result[endPos]) || result[endPos] == '_')) {
+                    endPos++;
+                }
+                varName = result.substr(pos + 1, endPos - pos - 1);
+            }
+        } else {
+            // Regular $variable syntax
+            while (endPos < result.length() && 
+                   (isalnum(result[endPos]) || result[endPos] == '_')) {
+                endPos++;
+            }
+            varName = result.substr(pos + 1, endPos - pos - 1);
         }
         
-        std::string varName = result.substr(pos + 1, endPos - pos - 1);
         std::string value = "";
-        
         if (params.find(varName) != params.end()) {
             value = params.at(varName);
         }
