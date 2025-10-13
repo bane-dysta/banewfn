@@ -286,6 +286,7 @@ std::string replacePlaceholders(const std::string& cmd,
     while ((pos = result.find('$', pos)) != std::string::npos) {
         size_t endPos = pos + 1;
         std::string varName;
+        std::string defaultValue;
         
         // Check for ${variable} syntax
         if (endPos < result.length() && result[endPos] == '{') {
@@ -293,7 +294,15 @@ std::string replacePlaceholders(const std::string& cmd,
             size_t braceStart = endPos + 1;
             size_t braceEnd = result.find('}', braceStart);
             if (braceEnd != std::string::npos) {
-                varName = result.substr(braceStart, braceEnd - braceStart);
+                std::string inside = result.substr(braceStart, braceEnd - braceStart);
+                // Support Bash-style default: ${var:-default}
+                size_t defaultSep = inside.find(":-");
+                if (defaultSep != std::string::npos) {
+                    varName = inside.substr(0, defaultSep);
+                    defaultValue = inside.substr(defaultSep + 2);
+                } else {
+                    varName = inside;
+                }
                 endPos = braceEnd + 1;
             } else {
                 // No closing brace found, treat as regular $variable
@@ -313,8 +322,13 @@ std::string replacePlaceholders(const std::string& cmd,
         }
         
         std::string value = "";
-        if (params.find(varName) != params.end()) {
-            value = params.at(varName);
+        auto it = params.find(varName);
+        if (it != params.end()) {
+            value = it->second;
+        }
+        // If value is unset or empty, and defaultValue provided, use defaultValue
+        if (value.empty() && !defaultValue.empty()) {
+            value = defaultValue;
         }
         
         result.replace(pos, endPos - pos, value);

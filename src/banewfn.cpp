@@ -55,9 +55,12 @@ public:
         const Section& section = modConfig.sections.at(sectionName);
         
         // Merge default values and provided parameters
+        // Only override defaults if provided value is non-empty, to mimic ${var:-default}
         std::map<std::string, std::string> finalParams = section.defaults;
         for (const auto& param : params) {
-            finalParams[param.first] = param.second;
+            if (!param.second.empty()) {
+                finalParams[param.first] = param.second;
+            }
         }
         
         // Generate commands

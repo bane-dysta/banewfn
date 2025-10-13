@@ -50,19 +50,19 @@ end
 **command.inp** - 激发态分析示例：
 ```ini
 wfn=h2o.fchk
-[ex]
+[hole-ele]
 state 1
 %process
-    hole-ele
+    cub
 %command
 mv hole.cub s1_hole.cub
 mv electron.cub s1_ele.cub
 end
 
-[ex]
+[hole-ele]
 state 2
 %process
-    hole-ele
+    cub
 %command
 mv hole.cub s2_hole.cub
 mv electron.cub s2_ele.cub
@@ -81,7 +81,7 @@ end
 
 # 处理步骤定义
 [步骤名]
-命令序列...
+命令序列...  # 注意：此处应当回到main进入的界面，以便继续处理
 
 # 默认参数
 -default-
@@ -102,56 +102,11 @@ end
 
 [orb]
 3
-$index
-$grid
-
--default-
-index=h
-grid=2
+${index:-h}
+${grid:-2}
 
 # 退出
 [quit]
-0
-q
-```
-
-**ex.conf** - 激发态分析配置：
-```ini
-# 主逻辑
-[main]
-18
-1
-$logfile
-$state
-1
-$grid
-
--default-
-logfile=""
-state=1
-grid=2
-
-# 空穴-电子分析
-[hole-ele]
-10
-$choice
-11
-$choice
--default-
-choice=1
-
-# 高斯平滑
-[Cele]
-16
-
-# 跃迁密度
-[transden]
-13
-
-# 退出
-[quit]
-0 
-0
 0
 q
 ```
@@ -206,15 +161,27 @@ banewfn input.inp molecule.fchk -d -s -c 8
 
 ## 参数替换机制
 
-配置文件支持参数替换，使用 `$参数名` 的格式：
+配置文件支持参数替换，支持以下占位符形式：
 
-- `$index`: 替换为 index 参数的值
-- `$state`: 替换为 state 参数的值
-- `$grid`: 替换为 grid 参数的值
+1. `$name` 与 `${name}`：替换为参数 `name` 的值。
+2. `${name:-default}`：当参数 `name` 未提供或值为空字符串时，使用 `default`。
 
-参数值可以通过以下方式提供：
-1. 输入文件中的参数定义
-2. 配置文件中的默认值
+示例：
+```ini
+# 命令中使用
+mv out_${state}.txt out_S${state}.txt
+echo ${logfile:-1.log}
+```
+
+参数来源与覆盖规则：
+- 在模块 `.conf` 的 `-default-` 段中定义默认值。
+- 在输入 `.inp` 文件中提供的参数会覆盖默认值。
+- 覆盖时仅当传入值非空时才会覆盖默认值；空字符串视为“未设置”。
+- 因此若在 `-default-` 中有 `logfile=1.log`，则命令中的 `$logfile` 等效于 `${logfile:-1.log}`。
+
+参数值可以通过以下方式提供（优先级自上而下，空值不覆盖）：
+1. 输入文件中的非空参数定义
+2. 配置文件 `-default-` 段中的默认值
 
 ## 执行模式
 
