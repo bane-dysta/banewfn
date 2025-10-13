@@ -14,6 +14,16 @@
 #include "ui.h"
 #include "utils.h"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 // Utility function: split string (deprecated - use Utils::split instead)
 std::vector<std::string> split(const std::string& str, char delimiter) {
     return Utils::split(str, delimiter);
@@ -469,6 +479,12 @@ void printUsage(const char* progName) {
 }
 
 int main(int argc, char* argv[]) {
+#ifdef _WIN32
+    // Ensure Windows console uses UTF-8 for input/output to avoid garbled ASCII art
+    // and other UTF-8 text when double-click launching.
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
     // Print ASCII logo on startup
     UI::printLogo();
     

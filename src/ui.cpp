@@ -7,14 +7,19 @@
 
 void UI::printLogo() {
     std::cout << "\n";
-    std::cout << "  ██████╗  █████╗ ███╗   ██╗███████╗██╗    ██╗███████╗███╗   ██╗\n";
-    std::cout << "  ██╔══██╗██╔══██╗████╗  ██║██╔════╝██║    ██║██╔════╝████╗  ██║\n";
-    std::cout << "  ██████╔╝███████║██╔██╗ ██║█████╗  ██║ █╗ ██║█████╗  ██╔██╗ ██║\n";
-    std::cout << "  ██╔══██╗██╔══██║██║╚██╗██║██╔══╝  ██║███╗██║██╔══╝  ██║╚██╗██║\n";
-    std::cout << "  ██████╔╝██║  ██║██║ ╚████║███████╗╚███╔███╔╝██║     ██║ ╚████║\n";
-    std::cout << "  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝ ╚══╝╚══╝ ╚═╝     ╚═╝  ╚═══╝\n";
+    std::cout << u8"  ██████╗  █████╗ ███╗   ██╗███████╗██╗    ██╗███████╗███╗   ██╗\n";
+    std::cout << u8"  ██╔══██╗██╔══██╗████╗  ██║██╔════╝██║    ██║██╔════╝████╗  ██║\n";
+    std::cout << u8"  ██████╔╝███████║██╔██╗ ██║█████╗  ██║ █╗ ██║█████╗  ██╔██╗ ██║\n";
+    std::cout << u8"  ██╔══██╗██╔══██║██║╚██╗██║██╔══╝  ██║███╗██║██╔══╝  ██║╚██╗██║\n";
+    std::cout << u8"  ██████╔╝██║  ██║██║ ╚████║███████╗╚███╔███╔╝██║     ██║ ╚████║\n";
+    std::cout << u8"  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝ ╚══╝╚══╝ ╚═╝     ╚═╝  ╚═══╝\n";
     std::cout << "\n";
-    std::cout << "  ==================Multiwfn Script Generator==================\n";
+    std::cout << u8"  ========================banewfn v1.0=========================\n";
+    std::cout << u8"  Author: Bane Dysta\n";
+    std::cout << u8"  Feedback: https://github.com/bane-dysta/banewfn\n";
+    std::cout << u8"  You should cite Multiwfn as Porf. Lu mentioned in manual.\n";
+    std::cout << u8"  If you would like to cite this program also, you can use:\n";  
+    std::cout << u8"  Chiyuan Wei, banewfn, Version 1.0, https://github.com/bane-dysta/banewfn (accessed on day month year)\n";   
     std::cout << "\n";
 }
 
