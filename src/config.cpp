@@ -148,8 +148,8 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile) {
             std::string key = trim(line.substr(0, pos));
             std::string value = trim(line.substr(pos + 1));
             
-            if (key == "Multiwfnpath") {
-                config.multiwfnPath = expandPath(value);
+            if (key == "Multiwfn_exec") {
+                config.multiwfnExec = expandPath(value);
             } else if (key == "confpath") {
                 config.confPath = expandPath(value);
             } else if (key == "cores") {
@@ -160,8 +160,8 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile) {
     
     file.close();
     
-    if (config.multiwfnPath.empty()) {
-        std::cerr << "Error: Multiwfnpath not specified in config file" << std::endl;
+    if (config.multiwfnExec.empty()) {
+        std::cerr << "Error: Multiwfn_exec not specified in config file" << std::endl;
         return false;
     }
     
@@ -279,8 +279,12 @@ bool ConfigManager::hasModuleConfig(const std::string& moduleName) const {
 
 // Replace placeholders in command string
 std::string replacePlaceholders(const std::string& cmd, 
-                               const std::map<std::string, std::string>& params) {
+                               const std::map<std::string, std::string>& params,
+                               const std::string& inputFile) {
     std::string result = cmd;
+    
+    // Get base name of input file (without path and extension) for $input placeholder
+    std::string inputBaseName = inputFile.empty() ? "" : getBaseName(inputFile);
     
     size_t pos = 0;
     while ((pos = result.find('$', pos)) != std::string::npos) {
@@ -322,10 +326,18 @@ std::string replacePlaceholders(const std::string& cmd,
         }
         
         std::string value = "";
-        auto it = params.find(varName);
-        if (it != params.end()) {
-            value = it->second;
+        
+        // Check for special "input" placeholder
+        if (varName == "input") {
+            value = inputBaseName;
+        } else {
+            // Look up in params map
+            auto it = params.find(varName);
+            if (it != params.end()) {
+                value = it->second;
+            }
         }
+        
         // If value is unset or empty, and defaultValue provided, use defaultValue
         if (value.empty() && !defaultValue.empty()) {
             value = defaultValue;

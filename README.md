@@ -118,13 +118,13 @@ q
 **banewfn.rc**：
 ```ini
 # banewfn.rc
-Multiwfnpath=Multiwfn
+Multiwfn_exec=Multiwfn
 confpath=/path/to/conf/directory
 cores=4
 ```
 
 #### 配置项说明：
-- `Multiwfnpath`: Multiwfn 可执行文件路径
+- `Multiwfn_exec`: Multiwfn 可执行文件路径
 - `confpath`: 配置文件目录路径
 - `cores`: 默认使用的CPU核心数
 
@@ -233,7 +233,7 @@ g++ -std=c++11 -o banewfn src/*.cpp
 ## 注意事项
 
 1. **配置文件路径**: 确保 `confpath` 指向正确的配置文件目录
-2. **Multiwfn路径**: 确保 `Multiwfnpath` 指向正确的 Multiwfn 可执行文件
+2. **Multiwfn路径**: 确保 `Multiwfn_exec` 指向正确的 Multiwfn 可执行文件
 3. **文件权限**: 确保有足够的权限创建临时文件和执行命令
 4. **参数格式**: 参数值中的空格和特殊字符需要适当转义
 

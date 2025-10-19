@@ -47,7 +47,8 @@ public:
     // Generate command sequence
     std::vector<std::string> generateCommands(const std::string& moduleName,
                                              const std::string& sectionName,
-                                             const std::map<std::string, std::string>& params) {
+                                             const std::map<std::string, std::string>& params,
+                                             const std::string& inputFile = "") {
         std::vector<std::string> result;
         
         if (!configManager.hasModuleConfig(moduleName)) {
@@ -75,7 +76,7 @@ public:
         
         // Generate commands
         for (const auto& cmd : section.commands) {
-            result.push_back(replacePlaceholders(cmd, finalParams));
+            result.push_back(replacePlaceholders(cmd, finalParams, inputFile));
         }
         
         return result;
@@ -92,7 +93,7 @@ public:
     }
     
     // Generate command script for a single module
-    std::string generateModuleScript(const ModuleTask& task, bool includeQuit) {
+    std::string generateModuleScript(const ModuleTask& task, bool includeQuit, const std::string& inputFile = "") {
         std::stringstream output;
         
         if (!configManager.hasModuleConfig(task.moduleName)) {
@@ -103,14 +104,14 @@ public:
         const ModuleConfig& modConfig = configManager.getModuleConfig(task.moduleName);
         
         // Generate main module commands (pre-processing)
-        auto commands = generateCommands(task.moduleName, "main", task.params);
+        auto commands = generateCommands(task.moduleName, "main", task.params, inputFile);
         for (const auto& cmd : commands) {
             output << cmd << "\n";
         }
         
         // Generate post-processing commands
         for (const auto& step : task.postProcessSteps) {
-            auto stepCommands = generateCommands(task.moduleName, step.first, step.second);
+            auto stepCommands = generateCommands(task.moduleName, step.first, step.second, inputFile);
             for (const auto& cmd : stepCommands) {
                 output << cmd << "\n";
             }
@@ -132,7 +133,7 @@ public:
         std::cout << "\nProcessing module: " << task.moduleName << " (file mode)" << std::endl;
         
         // Generate command script with quit commands
-        std::string commands = generateModuleScript(task, true);
+        std::string commands = generateModuleScript(task, true, wfnFile);
         if (commands.empty()) {
             return false;
         }
@@ -161,7 +162,7 @@ public:
         
         // Generate output filename or screen output
         std::stringstream cmd;
-        cmd << configManager.getConfig().multiwfnPath << " " << wfnFile << " < " << cmdFileName;
+        cmd << configManager.getConfig().multiwfnExec << " " << wfnFile << " < " << cmdFileName;
         
         if (!options.screen) {
             std::string outFile = task.moduleName + "_" + wfnBaseName;
@@ -209,7 +210,7 @@ public:
         }
         
         // Generate command script without quit commands
-        std::string commands = generateModuleScript(task, false);
+        std::string commands = generateModuleScript(task, false, wfnFile);
         if (commands.empty()) {
             return false;
         }
@@ -248,7 +249,7 @@ public:
             }
         }
         
-        cmd << "type con) | " << configManager.getConfig().multiwfnPath << " " << wfnFile << "\"";
+        cmd << "type con) | " << configManager.getConfig().multiwfnExec << " " << wfnFile << "\"";
 #else
         // Linux style: (echo cmd1; echo cmd2; ...; cat) | Multiwfn file
         cmd << "(";
@@ -271,7 +272,7 @@ public:
             }
         }
         
-        cmd << "cat) | " << configManager.getConfig().multiwfnPath << " " << wfnFile;
+        cmd << "cat) | " << configManager.getConfig().multiwfnExec << " " << wfnFile;
 #endif
         
         if (cores > 0) {
@@ -295,17 +296,23 @@ public:
     }
     
     // Execute command block (shell commands)
-    bool executeCommandBlock(const ModuleTask& task, const ExecutionOptions& options) {
+    bool executeCommandBlock(const ModuleTask& task, const ExecutionOptions& options, const std::string& wfnFile = "") {
         if (task.commands.empty()) {
             return true; // No commands to execute
         }
         
         std::cout << "\nExecuting command block for module: " << task.moduleName << std::endl;
         
+        // Replace placeholders in commands
+        std::vector<std::string> processedCommands;
+        for (const auto& cmd : task.commands) {
+            processedCommands.push_back(replacePlaceholders(cmd, task.params, wfnFile));
+        }
+        
         // In dryrun mode, only show what would be executed
         if (options.dryrun) {
             std::cout << "Dry-run mode: Would execute the following commands:" << std::endl;
-            for (const auto& cmd : task.commands) {
+            for (const auto& cmd : processedCommands) {
                 std::cout << "  " << cmd << std::endl;
             }
             return true;
@@ -326,7 +333,7 @@ public:
         }
         
         // Write batch commands
-        for (const auto& cmd : task.commands) {
+        for (const auto& cmd : processedCommands) {
             scriptFile << cmd << std::endl;
         }
         scriptFile.close();
@@ -354,7 +361,7 @@ public:
         scriptFile << "set -e" << std::endl; // Exit on error
         
         // Write shell commands
-        for (const auto& cmd : task.commands) {
+        for (const auto& cmd : processedCommands) {
             scriptFile << cmd << std::endl;
         }
         scriptFile.close();
@@ -395,7 +402,7 @@ public:
         
         // Execute command block if module execution was successful
         if (success) {
-            success = executeCommandBlock(task, options);
+            success = executeCommandBlock(task, options, wfnFile);
         }
         
         return success;

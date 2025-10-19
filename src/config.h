@@ -25,7 +25,7 @@ struct ModuleConfig {
 
 // Global configuration structure
 struct BaneWfnConfig {
-    std::string multiwfnPath;
+    std::string multiwfnExec;
     std::string confPath;
     int cores;
 };
@@ -38,7 +38,8 @@ bool fileExists(const std::string& filepath);
 std::string findConfigFile(const std::string& executablePath);
 std::string getBaseName(const std::string& filepath);
 std::string replacePlaceholders(const std::string& cmd, 
-                               const std::map<std::string, std::string>& params);
+                               const std::map<std::string, std::string>& params,
+                               const std::string& inputFile = "");
 
 // Configuration manager class
 class ConfigManager {
