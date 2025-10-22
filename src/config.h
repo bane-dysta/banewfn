@@ -38,8 +38,7 @@ bool fileExists(const std::string& filepath);
 std::string findConfigFile(const std::string& executablePath);
 std::string getBaseName(const std::string& filepath);
 std::string replacePlaceholders(const std::string& cmd, 
-                               const std::map<std::string, std::string>& params,
-                               const std::string& inputFile = "");
+                               const std::map<std::string, std::string>& params);
 
 // Configuration manager class
 class ConfigManager {

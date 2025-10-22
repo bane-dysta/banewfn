@@ -5,6 +5,6 @@ banewfn
 *.cub
 *.out
 test
-tmp.sh
+tmp*.sh
 build
 btask_wfn

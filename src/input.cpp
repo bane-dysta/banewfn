@@ -10,6 +10,55 @@ std::vector<std::string> InputParser::split(const std::string& str, char delimit
     return Utils::split(str, delimiter);
 }
 
+// Replace input file placeholders ($input and ${input}) with input filename without extension
+std::string InputParser::replaceInputPlaceholders(const std::string& text, const std::string& inputFile) {
+    std::string result = text;
+    
+    // Extract filename without extension from input file path
+    std::string inputBaseName = getBaseName(inputFile);
+    
+    size_t pos = 0;
+    while ((pos = result.find('$', pos)) != std::string::npos) {
+        size_t endPos = pos + 1;
+        std::string varName;
+        
+        // Check for ${input} syntax
+        if (endPos < result.length() && result[endPos] == '{') {
+            size_t braceStart = endPos + 1;
+            size_t braceEnd = result.find('}', braceStart);
+            if (braceEnd != std::string::npos) {
+                varName = result.substr(braceStart, braceEnd - braceStart);
+                endPos = braceEnd + 1;
+            } else {
+                // No closing brace found, treat as regular $variable
+                while (endPos < result.length() && 
+                       (isalnum(result[endPos]) || result[endPos] == '_')) {
+                    endPos++;
+                }
+                varName = result.substr(pos + 1, endPos - pos - 1);
+            }
+        } else {
+            // Regular $variable syntax
+            while (endPos < result.length() && 
+                   (isalnum(result[endPos]) || result[endPos] == '_')) {
+                endPos++;
+            }
+            varName = result.substr(pos + 1, endPos - pos - 1);
+        }
+        
+        // Only replace if the variable name is "input"
+        if (varName == "input") {
+            result.replace(pos, endPos - pos, inputBaseName);
+            pos += inputBaseName.length();
+        } else {
+            // Skip this placeholder, move to next
+            pos = endPos;
+        }
+    }
+    
+    return result;
+}
+
 // Parse inp file, return all module tasks and optional wfn file
 std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn(const std::string& inpFile) {
     std::vector<ModuleTask> tasks;
@@ -103,8 +152,9 @@ std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn
         
         // Parse parameters, post-processing commands, or shell commands
         if (inCommandMode) {
-            // Command mode: store the entire line as a command
-            currentTask.commands.push_back(line);
+            // Command mode: store the entire line as a command with placeholder replacement
+            std::string processedLine = replaceInputPlaceholders(line, inpFile);
+            currentTask.commands.push_back(processedLine);
         } else {
             std::vector<std::string> tokens = split(line, ' ');
             if (tokens.empty()) continue;
@@ -112,7 +162,9 @@ std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn
             if (!inProcessMode) {
                 // Pre-processing parameter setting mode
                 if (tokens.size() >= 2) {
-                    currentTask.params[tokens[0]] = tokens[1];
+                    // Apply placeholder replacement to parameter values
+                    std::string processedValue = replaceInputPlaceholders(tokens[1], inpFile);
+                    currentTask.params[tokens[0]] = processedValue;
                 }
             } else {
                 // Post-processing command mode
@@ -122,7 +174,9 @@ std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn
                 // Parse subsequent parameters
                 for (size_t i = 1; i < tokens.size(); i += 2) {
                     if (i + 1 < tokens.size()) {
-                        sectionParams[tokens[i]] = tokens[i + 1];
+                        // Apply placeholder replacement to parameter values
+                        std::string processedValue = replaceInputPlaceholders(tokens[i + 1], inpFile);
+                        sectionParams[tokens[i]] = processedValue;
                     }
                 }
                 

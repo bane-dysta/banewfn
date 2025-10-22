@@ -34,6 +34,8 @@ public:
 private:
     // Utility function: split string
     static std::vector<std::string> split(const std::string& str, char delimiter);
+    // Replace input file placeholders ($input and ${input}) with input filename without extension
+    static std::string replaceInputPlaceholders(const std::string& text, const std::string& inputFile);
 };
 
 #endif // INPUT_H
