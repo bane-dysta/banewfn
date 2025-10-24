@@ -10,12 +10,12 @@ std::vector<std::string> InputParser::split(const std::string& str, char delimit
     return Utils::split(str, delimiter);
 }
 
-// Replace input file placeholders ($input and ${input}) with input filename without extension
-std::string InputParser::replaceInputPlaceholders(const std::string& text, const std::string& inputFile) {
+// Replace input file placeholders ($input and ${input}) with wavefunction filename without extension
+std::string InputParser::replaceInputPlaceholders(const std::string& text, const std::string& wfnFile) {
     std::string result = text;
     
-    // Extract filename without extension from input file path
-    std::string inputBaseName = getBaseName(inputFile);
+    // Extract filename without extension from wavefunction file path
+    std::string wfnBaseName = getBaseName(wfnFile);
     
     size_t pos = 0;
     while ((pos = result.find('$', pos)) != std::string::npos) {
@@ -48,8 +48,8 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
         
         // Only replace if the variable name is "input"
         if (varName == "input") {
-            result.replace(pos, endPos - pos, inputBaseName);
-            pos += inputBaseName.length();
+            result.replace(pos, endPos - pos, wfnBaseName);
+            pos += wfnBaseName.length();
         } else {
             // Skip this placeholder, move to next
             pos = endPos;
@@ -57,6 +57,28 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
     }
     
     return result;
+}
+
+// Apply placeholder replacement to all tasks using wavefunction filename
+void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, const std::string& wfnFile) {
+    for (auto& task : tasks) {
+        // Apply replacement to parameter values
+        for (auto& param : task.params) {
+            param.second = replaceInputPlaceholders(param.second, wfnFile);
+        }
+        
+        // Apply replacement to post-processing step parameters
+        for (auto& step : task.postProcessSteps) {
+            for (auto& param : step.second) {
+                param.second = replaceInputPlaceholders(param.second, wfnFile);
+            }
+        }
+        
+        // Apply replacement to commands
+        for (auto& command : task.commands) {
+            command = replaceInputPlaceholders(command, wfnFile);
+        }
+    }
 }
 
 // Parse inp file, return all module tasks and optional wfn file
@@ -152,9 +174,8 @@ std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn
         
         // Parse parameters, post-processing commands, or shell commands
         if (inCommandMode) {
-            // Command mode: store the entire line as a command with placeholder replacement
-            std::string processedLine = replaceInputPlaceholders(line, inpFile);
-            currentTask.commands.push_back(processedLine);
+            // Command mode: store the entire line as a command (placeholder replacement will be done later)
+            currentTask.commands.push_back(line);
         } else {
             std::vector<std::string> tokens = split(line, ' ');
             if (tokens.empty()) continue;
@@ -162,9 +183,8 @@ std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn
             if (!inProcessMode) {
                 // Pre-processing parameter setting mode
                 if (tokens.size() >= 2) {
-                    // Apply placeholder replacement to parameter values
-                    std::string processedValue = replaceInputPlaceholders(tokens[1], inpFile);
-                    currentTask.params[tokens[0]] = processedValue;
+                    // Store parameter value (placeholder replacement will be done later)
+                    currentTask.params[tokens[0]] = tokens[1];
                 }
             } else {
                 // Post-processing command mode
@@ -174,9 +194,8 @@ std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn
                 // Parse subsequent parameters
                 for (size_t i = 1; i < tokens.size(); i += 2) {
                     if (i + 1 < tokens.size()) {
-                        // Apply placeholder replacement to parameter values
-                        std::string processedValue = replaceInputPlaceholders(tokens[i + 1], inpFile);
-                        sectionParams[tokens[i]] = processedValue;
+                        // Store parameter value (placeholder replacement will be done later)
+                        sectionParams[tokens[i]] = tokens[i + 1];
                     }
                 }
                 

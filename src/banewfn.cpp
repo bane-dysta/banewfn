@@ -412,6 +412,9 @@ public:
         // Use wfn file from input file if specified, otherwise use command line argument
         std::string finalWfnFile = inputWfnFile.empty() ? wfnFile : inputWfnFile;
         
+        // Apply placeholder replacement using the final wavefunction filename
+        InputParser::applyPlaceholderReplacement(tasks, finalWfnFile);
+        
         if (tasks.empty()) {
             std::cerr << "Error: No modules found in inp file" << std::endl;
             return false;
