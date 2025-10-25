@@ -88,8 +88,8 @@ std::string findConfigFile(const std::string& /*executablePath*/) {
         searchPaths.push_back(execDir + "/banewfn.rc");
     }
     
-    // Priority 3: ~/.bane/multiwfn
-    searchPaths.push_back(expandPath("~/.bane/multiwfn/banewfn.rc"));
+    // Priority 3: ~/.bane/wfn
+    searchPaths.push_back(expandPath("~/.bane/wfn/banewfn.rc"));
     
     std::cout << "Searching for banewfn.rc in the following locations:" << std::endl;
     for (const auto& path : searchPaths) {
@@ -166,7 +166,7 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile) {
     }
     
     if (config.confPath.empty()) {
-        config.confPath = expandPath("~/.bane/multiwfn");
+        config.confPath = expandPath("~/.bane/wfn");
     }
     
     return true;

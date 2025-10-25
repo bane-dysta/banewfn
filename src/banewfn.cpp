@@ -557,7 +557,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "Please create the config file in one of the following locations:" << std::endl;
         std::cerr << "  - Current directory: ./banewfn.rc" << std::endl;
         std::cerr << "  - Executable directory: <exe_dir>/banewfn.rc" << std::endl;
-        std::cerr << "  - Home directory: ~/.bane/multiwfn/banewfn.rc" << std::endl;
+        std::cerr << "  - Home directory: ~/.bane/wfn/banewfn.rc" << std::endl;
         return 1;
     }
     
