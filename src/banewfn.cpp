@@ -91,6 +91,11 @@ public:
         return InputParser::parseInpFileWithWfn(inpFile);
     }
     
+    // Parse inp file, return all module tasks, optional wfn file, and core count
+    std::tuple<std::vector<ModuleTask>, std::string, int> parseInpFileWithWfnAndCores(const std::string& inpFile) {
+        return InputParser::parseInpFileWithWfnAndCores(inpFile);
+    }
+    
     // Generate command script for a single module
     std::string generateModuleScript(const ModuleTask& task, bool includeQuit) {
         std::stringstream output;
@@ -404,13 +409,21 @@ public:
     // Execute all module tasks
     bool executeAllTasks(const std::string& inpFile, const std::string& wfnFile, 
                         int cores, const ExecutionOptions& options) {
-        // Parse inp file, get all tasks and optional wfn file
-        auto parseResult = parseInpFileWithWfn(inpFile);
-        std::vector<ModuleTask> tasks = parseResult.first;
-        std::string inputWfnFile = parseResult.second;
+        // Parse inp file, get all tasks, optional wfn file, and core count
+        auto parseResult = parseInpFileWithWfnAndCores(inpFile);
+        std::vector<ModuleTask> tasks = std::get<0>(parseResult);
+        std::string inputWfnFile = std::get<1>(parseResult);
+        int inputCores = std::get<2>(parseResult);
         
         // Use wfn file from input file if specified, otherwise use command line argument
         std::string finalWfnFile = inputWfnFile.empty() ? wfnFile : inputWfnFile;
+        
+        // Use core count from input file if specified and no cores provided via command line
+        int finalCores = cores;
+        if (cores < 0 && inputCores > 0) {
+            finalCores = inputCores;
+            std::cout << "Using core count from input file: " << finalCores << std::endl;
+        }
         
         // Apply placeholder replacement using the final wavefunction filename
         InputParser::applyPlaceholderReplacement(tasks, finalWfnFile);
@@ -449,7 +462,7 @@ public:
         // Execute each module task in sequence
         bool allSuccess = true;
         for (const auto& task : tasks) {
-            if (!executeModuleTask(task, finalWfnFile, cores, options)) {
+            if (!executeModuleTask(task, finalWfnFile, finalCores, options)) {
                 allSuccess = false;
             }
         }
@@ -468,17 +481,20 @@ public:
 
 void printUsage(const char* progName) {
     std::cout << "Usage: " << progName << " <input.inp> <molecule.fchk> [options]\n";
+    std::cout << "       " << progName << " <input.inp> -w <molecule.fchk> [options]\n";
     std::cout << "\nOptions:\n";
     std::cout << "  -c, --cores <num>   Specify the number of CPU cores to use\n";
     std::cout << "  -d, --dryrun        Generate command files only, don't execute (skip wait tasks)\n";
     std::cout << "  -s, --screen        Display output on screen instead of redirecting to files\n";
+    std::cout << "  -w, --wfn <file>    Specify wavefunction file (.fchk/.wfn or other supported file)\n";
     std::cout << "  -h, --help          Show this help message\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << progName << " input.inp molecule.fchk\n";
+    std::cout << "  " << progName << " input.inp -w molecule.fchk\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -c 8\n";
-    std::cout << "  " << progName << " input.inp molecule.fchk --dryrun\n";
+    std::cout << "  " << progName << " input.inp -w molecule.fchk --dryrun\n";
     std::cout << "  " << progName << " input.inp molecule.fchk --screen\n";
-    std::cout << "  " << progName << " input.inp molecule.fchk -d -s -c 8\n";
+    std::cout << "  " << progName << " input.inp -w molecule.fchk -d -s -c 8\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -493,6 +509,7 @@ int main(int argc, char* argv[]) {
     
     std::string inpFile;
     std::string wfnFile;
+    std::string wfnParam;  // Store wfn parameter from -w/--wfn
     int cores = -1;
     ExecutionOptions options;
     
@@ -517,6 +534,14 @@ int main(int argc, char* argv[]) {
             options.dryrun = true;
         } else if (arg == "-s" || arg == "--screen") {
             options.screen = true;
+        } else if (arg == "-w" || arg == "--wfn") {
+            if (i + 1 < argc) {
+                wfnParam = argv[i + 1];
+                i++;
+            } else {
+                std::cerr << "Error: -w/--wfn requires an argument" << std::endl;
+                return 1;
+            }
         } else if (arg[0] == '-') {
             std::cerr << "Warning: Unknown option: " << arg << std::endl;
         } else {
@@ -532,11 +557,16 @@ int main(int argc, char* argv[]) {
         inpFile = UI::requestInputFile();
     }
     
-    // Check if input file contains wfn definition
-    auto parseResult = InputParser::parseInpFileWithWfn(inpFile);
-    std::string inputWfnFile = parseResult.second;
+    // Check if input file contains wfn definition and core setting
+    auto parseResult = InputParser::parseInpFileWithWfnAndCores(inpFile);
+    std::string inputWfnFile = std::get<1>(parseResult);
+    int inputCores = std::get<2>(parseResult);
     
-    if (positionalArgs.size() >= 2) {
+    // Priority order: 1) -w/--wfn parameter, 2) positional argument, 3) input file, 4) interactive input
+    if (!wfnParam.empty()) {
+        wfnFile = wfnParam;
+        std::cout << "Using wavefunction file from -w/--wfn parameter: " << wfnFile << std::endl;
+    } else if (positionalArgs.size() >= 2) {
         wfnFile = positionalArgs[1];
     } else if (inputWfnFile.empty()) {
         // Only request wfn file if not defined in input file
@@ -566,9 +596,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    // If cores not specified, use default value from banewfn.rc
+    // If cores not specified, use input file setting or default value from banewfn.rc
     if (cores < 0) {
-        cores = generator.getCores();
+        if (inputCores > 0) {
+            cores = inputCores;
+            std::cout << "Using core count from input file: " << cores << std::endl;
+        } else {
+            cores = generator.getCores();
+        }
     }
     
     // Execute all module tasks

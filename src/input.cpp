@@ -81,14 +81,15 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
     }
 }
 
-// Parse inp file, return all module tasks and optional wfn file
-std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn(const std::string& inpFile) {
+// Parse inp file, return all module tasks, optional wfn file, and core count
+std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileWithWfnAndCores(const std::string& inpFile) {
     std::vector<ModuleTask> tasks;
     std::string wfnFile;
+    int cores = -1;  // -1 means not specified
     std::ifstream file(inpFile);
     if (!file.is_open()) {
         std::cerr << "Error: Cannot open inp file: " << inpFile << std::endl;
-        return {tasks, wfnFile};
+        return {tasks, wfnFile, cores};
     }
     
     std::string line;
@@ -108,6 +109,13 @@ std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn
         // Check for wfn=xx format at the beginning of file
         if (line.find("wfn=") == 0 && currentTask.moduleName.empty()) {
             wfnFile = line.substr(4); // Extract everything after "wfn="
+            continue;
+        }
+        
+        // Check for core=xx format at the beginning of file
+        if (line.find("core=") == 0 && currentTask.moduleName.empty()) {
+            std::string coreStr = line.substr(5); // Extract everything after "core="
+            cores = std::atoi(coreStr.c_str());
             continue;
         }
         
@@ -210,7 +218,13 @@ std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn
     }
     
     file.close();
-    return {tasks, wfnFile};
+    return {tasks, wfnFile, cores};
+}
+
+// Parse inp file, return all module tasks and optional wfn file (backward compatibility)
+std::pair<std::vector<ModuleTask>, std::string> InputParser::parseInpFileWithWfn(const std::string& inpFile) {
+    auto result = parseInpFileWithWfnAndCores(inpFile);
+    return {std::get<0>(result), std::get<1>(result)};
 }
 
 // Parse inp file, return all module tasks (backward compatibility)
