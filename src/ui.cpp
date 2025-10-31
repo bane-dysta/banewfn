@@ -7,19 +7,18 @@
 
 void UI::printLogo() {
     std::cout << "\n";
-    std::cout << u8"  ██████╗  █████╗ ███╗   ██╗███████╗██╗    ██╗███████╗███╗   ██╗\n";
-    std::cout << u8"  ██╔══██╗██╔══██╗████╗  ██║██╔════╝██║    ██║██╔════╝████╗  ██║\n";
-    std::cout << u8"  ██████╔╝███████║██╔██╗ ██║█████╗  ██║ █╗ ██║█████╗  ██╔██╗ ██║\n";
-    std::cout << u8"  ██╔══██╗██╔══██║██║╚██╗██║██╔══╝  ██║███╗██║██╔══╝  ██║╚██╗██║\n";
-    std::cout << u8"  ██████╔╝██║  ██║██║ ╚████║███████╗╚███╔███╔╝██║     ██║ ╚████║\n";
-    std::cout << u8"  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝ ╚══╝╚══╝ ╚═╝     ╚═╝  ╚═══╝\n";
-    std::cout << "\n";
-    std::cout << u8"  ========================banewfn v1.0=========================\n";
+    std::cout << u8"   ____    _    _   _ _______        _______ _   _ \n";
+    std::cout << u8"  | __ )  / \\  | \\ | | ____\\ \\      / /  ___| \\ | |\n";
+    std::cout << u8"  |  _ \\ / _ \\ |  \\| |  _|  \\ \\ /\\ / /| |_  |  \\| |\n";
+    std::cout << u8"  | |_) / ___ \\| |\\  | |___  \\ V  V / |  _| | |\\  |\n";
+    std::cout << u8"  |____/_/   \\_\\_| \\_|_____|  \\_/\\_/  |_|   |_| \\_|\n";
     std::cout << u8"  Author: Bane Dysta\n";
     std::cout << u8"  Feedback: https://github.com/bane-dysta/banewfn\n";
-    std::cout << u8"  You should cite Multiwfn as Porf. Lu mentioned in manual.\n";
-    std::cout << u8"  If you would like to cite this program also, you can use:\n";  
-    std::cout << u8"  Chiyuan Wei, banewfn, Version 1.0, https://github.com/bane-dysta/banewfn (accessed on day month year)\n";   
+    std::cout << u8"  Tips: \n";
+    std::cout << u8"  This program only performs a workflow for Multiwfn, so if you use this program for publication,\n";
+    std::cout << u8"    you should cite Multiwfn as Prof. Lu mentioned in its manual.\n";
+    std::cout << u8"  If you would like to cite this program as well, you can use:\n";  
+    std::cout << u8"    Chiyuan Wei, banewfn, Version 1.0, https://github.com/bane-dysta/banewfn (accessed on day month year)\n";   
     std::cout << "\n";
 }
 
@@ -27,7 +26,7 @@ std::string UI::requestInputFile() {
     std::string inputFile;
     
     while (true) {
-        std::cout << "Please enter input file path: ";
+        std::cout << "Bane need an input file: ";
         std::getline(std::cin, inputFile);
         
         // Remove quotes and trim whitespace
@@ -37,7 +36,6 @@ std::string UI::requestInputFile() {
             return cleanedFile;
         } else {
             printFileError(cleanedFile);
-            std::cout << "Please re-enter a valid file path.\n";
         }
     }
 }
@@ -46,7 +44,7 @@ std::string UI::requestWavefunctionFile() {
     std::string wfnFile;
     
     while (true) {
-        std::cout << "Please enter wavefunction file path (.fchk/.wfn or other supported file): ";
+        std::cout << "Bane need a wavefunction file: ";
         std::getline(std::cin, wfnFile);
         
         // Remove quotes and trim whitespace
@@ -56,7 +54,6 @@ std::string UI::requestWavefunctionFile() {
             return cleanedFile;
         } else {
             printFileError(cleanedFile);
-            std::cout << "Please re-enter a valid file path.\n";
         }
     }
 }
@@ -66,7 +63,7 @@ bool UI::validateFile(const std::string& filepath) {
 }
 
 void UI::printFileError(const std::string& filepath) {
-    std::cout << "Error: Cannot access file '" << filepath << "'\n";
+    std::cout << "Bane is useless, cannot access file '" << filepath << "' TAT\n";
 }
 
 std::string UI::getUserInput(const std::string& prompt) {

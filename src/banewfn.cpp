@@ -134,7 +134,7 @@ public:
     // Execute single module Multiwfn task (file-based mode)
     bool executeModuleTaskFile(const ModuleTask& task, const std::string& wfnFile, 
                                int cores, const ExecutionOptions& options) {
-        std::cout << "\nProcessing module: " << task.moduleName << " (file mode)" << std::endl;
+        std::cout << "\n>>> Processing module: " << task.moduleName << std::endl;
         
         // Generate command script with quit commands
         std::string commands = generateModuleScript(task, true);
@@ -182,7 +182,7 @@ public:
         }
         
         std::cout << "Executing command: " << cmd.str() << std::endl;
-        std::cout << "Starting Multiwfn...\n" << std::endl;
+        std::cout << "Starting Multiwfn process..." << std::endl;
         
         // Execute command
         int result = system(cmd.str().c_str());
@@ -339,7 +339,7 @@ public:
         // Execute batch file
         std::stringstream cmd;
         cmd << "cmd /c \"" << scriptFileName << "\"";
-        std::cout << "Executing: " << cmd.str() << std::endl;
+        std::cout << "Running script: " << cmd.str() << " ..." << std::endl;
         
         int result = system(cmd.str().c_str());
         
@@ -356,7 +356,7 @@ public:
         
         // Write shell script header
         scriptFile << "#!/bin/bash" << std::endl;
-        // scriptFile << "set -e" << std::endl; // Exit on error
+        // scriptFile << "set -e" << std::endl; // Exit on error is not necessary
         
         // Write shell commands
         for (const auto& cmd : task.commands) {
@@ -370,7 +370,7 @@ public:
         // Execute shell script
         std::stringstream cmd;
         cmd << "./" << scriptFileName;
-        std::cout << "Executing: " << cmd.str() << std::endl;
+        std::cout << "Running script: " << cmd.str() << " ..." << std::endl;
         
         int result = system(cmd.str().c_str());
         
@@ -392,6 +392,11 @@ public:
                           int cores, const ExecutionOptions& options) {
         bool success = false;
         
+        // Support command-only task (no module, only %command block)
+        if (task.moduleName.empty()) {
+            return executeCommandBlock(task, options);
+        }
+
         if (task.useWait) {
             success = executeModuleTaskPipe(task, wfnFile, cores, options);
         } else {
@@ -436,7 +441,9 @@ public:
         // Collect all required modules and load configurations
         std::set<std::string> modules;
         for (const auto& task : tasks) {
-            modules.insert(task.moduleName);
+            if (!task.moduleName.empty()) {
+                modules.insert(task.moduleName);
+            }
         }
         
         std::cout << "\nRequired modules: ";

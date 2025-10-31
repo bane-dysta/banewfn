@@ -46,9 +46,11 @@ public:
     static bool validateFile(const std::string& filepath);
     
     /**
-     * @brief 去除字符串中的行内注释（#号及其后面的内容）
+     * @brief 去除字符串中的行内注释（# 及其后面），但保留以下情况：
+     *        - 引号内的 # 视为普通字符（支持 '...' 与 "..."）
+     *        - 使用 \# 可转义字面 #（只在引号外生效）
      * @param str 输入字符串
-     * @return 去除行内注释后的字符串
+     * @return 去除行内注释后的字符串（并已去首尾空白）
      */
     static std::string removeInlineComment(const std::string& str);
 };

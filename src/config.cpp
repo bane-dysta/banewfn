@@ -20,18 +20,48 @@ std::string trim(const std::string& str) {
     return Utils::trim(str);
 }
 
-// Utility function: expand ~ to HOME path
+// Utility function: expand ~ and $HOME/${HOME}
 std::string expandPath(const std::string& path) {
-    if (path.empty() || path[0] != '~') {
+    if (path.empty()) {
         return path;
     }
-    
-    const char* home = getenv("HOME");
-    if (!home) {
-        return path;
+
+    // Resolve HOME directory
+    const char* homeEnv = getenv("HOME");
+#ifdef PLATFORM_WINDOWS
+    if (!homeEnv) {
+        homeEnv = getenv("USERPROFILE");
     }
-    
-    return std::string(home) + path.substr(1);
+#endif
+    const std::string homeDir = homeEnv ? std::string(homeEnv) : std::string("");
+
+    std::string result = path;
+
+    // Expand leading ~ (e.g., ~/foo or ~)
+    if (!homeDir.empty() && result[0] == '~') {
+        // Replace only the first character '~'
+        result = homeDir + result.substr(1);
+    }
+
+    // Expand $HOME occurrences
+    if (!homeDir.empty()) {
+        // Replace ${HOME}
+        std::string keyBraced = "${HOME}";
+        size_t pos = 0;
+        while ((pos = result.find(keyBraced, pos)) != std::string::npos) {
+            result.replace(pos, keyBraced.size(), homeDir);
+            pos += homeDir.size();
+        }
+        // Replace $HOME (avoid overlapping with ${HOME} which is already handled)
+        std::string keySimple = "$HOME";
+        pos = 0;
+        while ((pos = result.find(keySimple, pos)) != std::string::npos) {
+            result.replace(pos, keySimple.size(), homeDir);
+            pos += homeDir.size();
+        }
+    }
+
+    return result;
 }
 
 // Utility function: get executable directory path
@@ -254,7 +284,7 @@ bool ConfigManager::loadModuleConfig(const std::string& moduleName) {
     
     // If no quit section defined, use default value
     if (modConfig.quitCommands.empty()) {
-        std::cout << "Warning: Module " << moduleName << " does not define [quit] section, using default quit command 'q'" << std::endl;
+        std::cout << "Warning: Module " << moduleName << " does not define [quit] section." << std::endl;
         modConfig.quitCommands.push_back("q");
     }
     

@@ -47,9 +47,43 @@ bool Utils::validateFile(const std::string& filepath) {
 }
 
 std::string Utils::removeInlineComment(const std::string& str) {
-    size_t commentPos = str.find('#');
-    if (commentPos != std::string::npos) {
-        return trim(str.substr(0, commentPos));
+    bool inSingleQuote = false;
+    bool inDoubleQuote = false;
+    std::string result;
+
+    for (size_t i = 0; i < str.size(); ++i) {
+        char c = str[i];
+
+        // Support escaping '#' outside quotes via \# -> '#'
+        if (!inSingleQuote && !inDoubleQuote && c == '\\') {
+            if (i + 1 < str.size() && str[i + 1] == '#') {
+                result.push_back('#');
+                ++i; // skip '#'
+                continue;
+            }
+            // keep backslash if not escaping '#'
+            result.push_back(c);
+            continue;
+        }
+
+        if (!inDoubleQuote && c == '\'') {
+            inSingleQuote = !inSingleQuote;
+            result.push_back(c);
+            continue;
+        }
+        if (!inSingleQuote && c == '"') {
+            inDoubleQuote = !inDoubleQuote;
+            result.push_back(c);
+            continue;
+        }
+
+        // If we see '#' outside quotes, treat as start of comment
+        if (!inSingleQuote && !inDoubleQuote && c == '#') {
+            break;
+        }
+
+        result.push_back(c);
     }
-    return str;
+
+    return trim(result);
 }

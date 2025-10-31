@@ -11,6 +11,7 @@ std::vector<std::string> InputParser::split(const std::string& str, char delimit
 }
 
 // Replace input file placeholders ($input and ${input}) with wavefunction filename without extension
+// Additionally, support ${name} -> read value from file "name" in current directory (trimmed)
 std::string InputParser::replaceInputPlaceholders(const std::string& text, const std::string& wfnFile) {
     std::string result = text;
     
@@ -21,6 +22,7 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
     while ((pos = result.find('$', pos)) != std::string::npos) {
         size_t endPos = pos + 1;
         std::string varName;
+        bool usedBraces = false;
         
         // Check for ${input} syntax
         if (endPos < result.length() && result[endPos] == '{') {
@@ -29,6 +31,7 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
             if (braceEnd != std::string::npos) {
                 varName = result.substr(braceStart, braceEnd - braceStart);
                 endPos = braceEnd + 1;
+                usedBraces = true;
             } else {
                 // No closing brace found, treat as regular $variable
                 while (endPos < result.length() && 
@@ -50,8 +53,24 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
         if (varName == "input") {
             result.replace(pos, endPos - pos, wfnBaseName);
             pos += wfnBaseName.length();
+        } else if (usedBraces) {
+            // For ${name} (braced) and name != input, attempt file-based replacement
+            // Read file named exactly as varName from current working directory
+            if (Utils::fileExists(varName)) {
+                std::ifstream f(varName);
+                if (f.good()) {
+                    std::stringstream buffer;
+                    buffer << f.rdbuf();
+                    std::string fileContent = Utils::trim(buffer.str());
+                    result.replace(pos, endPos - pos, fileContent);
+                    pos += fileContent.length();
+                    continue;
+                }
+            }
+            // If no file found or cannot read, skip replacement
+            pos = endPos;
         } else {
-            // Skip this placeholder, move to next
+            // Non-braced variables (like $name) are not replaced except $input
             pos = endPos;
         }
     }
@@ -99,44 +118,46 @@ std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileW
     std::map<std::string, int> moduleBlockCounters;  // Track block indices for each module name
     
     while (std::getline(file, line)) {
-        line = ::trim(line);
-        
-        // 去除行内注释
-        line = Utils::removeInlineComment(line);
-        
-        if (line.empty()) continue;
-        
+        // 保留前导空白用于模块行“顶格”判断
+        std::string noComment = Utils::removeInlineComment(line);
+        std::string trimmed = Utils::trim(noComment);
+
+        if (trimmed.empty()) continue;
+
         // Check for wfn=xx format at the beginning of file
-        if (line.find("wfn=") == 0 && currentTask.moduleName.empty()) {
-            wfnFile = line.substr(4); // Extract everything after "wfn="
+        if (trimmed.find("wfn=") == 0 && currentTask.moduleName.empty()) {
+            wfnFile = trimmed.substr(4);
             continue;
         }
         
         // Check for core=xx format at the beginning of file
-        if (line.find("core=") == 0 && currentTask.moduleName.empty()) {
-            std::string coreStr = line.substr(5); // Extract everything after "core="
+        if (trimmed.find("core=") == 0 && currentTask.moduleName.empty()) {
+            std::string coreStr = trimmed.substr(5);
             cores = std::atoi(coreStr.c_str());
             continue;
         }
         
-        // Module start [module_name]
-        if (line[0] == '[' && line.back() == ']') {
-            // If there is an unfinished task, save it
-            if (!currentTask.moduleName.empty()) {
-                tasks.push_back(currentTask);
+        // Module start [module_name] 必须顶格
+        if (!noComment.empty() && noComment[0] == '[') {
+            size_t lastNonWS = noComment.find_last_not_of(" \t\r\n");
+            if (lastNonWS != std::string::npos && noComment[lastNonWS] == ']') {
+                // If there is an unfinished task, save it
+                if (!currentTask.moduleName.empty() || !currentTask.commands.empty()) {
+                    tasks.push_back(currentTask);
+                }
+                currentTask = ModuleTask();
+                std::string inside = noComment.substr(1, lastNonWS - 1);
+                currentTask.moduleName = Utils::trim(inside);
+                currentTask.useWait = false;
+                currentTask.blockIndex = moduleBlockCounters[currentTask.moduleName]++;
+                inProcessMode = false;
+                inCommandMode = false;
+                continue;
             }
-            
-            currentTask = ModuleTask();
-            currentTask.moduleName = line.substr(1, line.length() - 2); // Remove [ and ]
-            currentTask.useWait = false;
-            currentTask.blockIndex = moduleBlockCounters[currentTask.moduleName]++; // Assign unique index
-            inProcessMode = false;
-            inCommandMode = false;
-            continue;
         }
         
         // Enter post-processing mode
-        if (line == "%process") {
+        if (trimmed == "%process") {
             if (currentTask.moduleName.empty()) {
                 std::cerr << "Warning: %process without module definition" << std::endl;
                 continue;
@@ -147,10 +168,12 @@ std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileW
         }
         
         // Enter command mode
-        if (line == "%command") {
+        if (trimmed == "%command") {
+            // Allow top-level %command without module definition ("裸command")
             if (currentTask.moduleName.empty()) {
-                std::cerr << "Warning: %command without module definition" << std::endl;
-                continue;
+                currentTask = ModuleTask();
+                currentTask.useWait = false;
+                currentTask.blockIndex = moduleBlockCounters[currentTask.moduleName]++;
             }
             inCommandMode = true;
             inProcessMode = false;
@@ -158,8 +181,8 @@ std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileW
         }
         
         // End current module with "end"
-        if (line == "end") {
-            if (!currentTask.moduleName.empty()) {
+        if (trimmed == "end") {
+            if (!currentTask.moduleName.empty() || !currentTask.commands.empty()) {
                 tasks.push_back(currentTask);
                 currentTask = ModuleTask();
             }
@@ -169,7 +192,7 @@ std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileW
         }
         
         // End current module with "wait" (interactive mode)
-        if (line == "wait") {
+        if (trimmed == "wait") {
             if (!currentTask.moduleName.empty()) {
                 currentTask.useWait = true;
                 tasks.push_back(currentTask);
@@ -183,9 +206,9 @@ std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileW
         // Parse parameters, post-processing commands, or shell commands
         if (inCommandMode) {
             // Command mode: store the entire line as a command (placeholder replacement will be done later)
-            currentTask.commands.push_back(line);
+            currentTask.commands.push_back(trimmed);
         } else {
-            std::vector<std::string> tokens = split(line, ' ');
+            std::vector<std::string> tokens = split(trimmed, ' ');
             if (tokens.empty()) continue;
             
             if (!inProcessMode) {
@@ -212,8 +235,8 @@ std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileW
         }
     }
     
-    // Save the last task
-    if (!currentTask.moduleName.empty()) {
+    // Save the last task (module or command-only)
+    if (!currentTask.moduleName.empty() || !currentTask.commands.empty()) {
         tasks.push_back(currentTask);
     }
     
