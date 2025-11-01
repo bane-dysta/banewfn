@@ -12,7 +12,8 @@ std::vector<std::string> InputParser::split(const std::string& str, char delimit
 
 // Replace input file placeholders ($input and ${input}) with wavefunction filename without extension
 // Additionally, support ${name} -> read value from file "name" in current directory (trimmed)
-std::string InputParser::replaceInputPlaceholders(const std::string& text, const std::string& wfnFile) {
+// Also support custom variables from command line or file header
+std::string InputParser::replaceInputPlaceholders(const std::string& text, const std::string& wfnFile, const std::map<std::string, std::string>& customVars) {
     std::string result = text;
     
     // Extract filename without extension from wavefunction file path
@@ -49,28 +50,39 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
             varName = result.substr(pos + 1, endPos - pos - 1);
         }
         
-        // Only replace if the variable name is "input"
-        if (varName == "input") {
-            result.replace(pos, endPos - pos, wfnBaseName);
-            pos += wfnBaseName.length();
-        } else if (usedBraces) {
-            // For ${name} (braced) and name != input, attempt file-based replacement
+        std::string replacement;
+        bool found = false;
+        
+        // Priority 1: Check custom variables from command line or file header
+        auto customIt = customVars.find(varName);
+        if (customIt != customVars.end()) {
+            replacement = customIt->second;
+            found = true;
+        }
+        // Priority 2: Check if the variable name is "input"
+        else if (varName == "input") {
+            replacement = wfnBaseName;
+            found = true;
+        }
+        // Priority 3: For ${name} (braced) and name != input, attempt file-based replacement
+        else if (usedBraces) {
             // Read file named exactly as varName from current working directory
             if (Utils::fileExists(varName)) {
                 std::ifstream f(varName);
                 if (f.good()) {
                     std::stringstream buffer;
                     buffer << f.rdbuf();
-                    std::string fileContent = Utils::trim(buffer.str());
-                    result.replace(pos, endPos - pos, fileContent);
-                    pos += fileContent.length();
-                    continue;
+                    replacement = Utils::trim(buffer.str());
+                    found = true;
                 }
             }
-            // If no file found or cannot read, skip replacement
-            pos = endPos;
+        }
+        
+        if (found) {
+            result.replace(pos, endPos - pos, replacement);
+            pos += replacement.length();
         } else {
-            // Non-braced variables (like $name) are not replaced except $input
+            // If no replacement found, skip this placeholder
             pos = endPos;
         }
     }
@@ -78,37 +90,38 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
     return result;
 }
 
-// Apply placeholder replacement to all tasks using wavefunction filename
-void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, const std::string& wfnFile) {
+// Apply placeholder replacement to all tasks using wavefunction filename and custom variables
+void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, const std::string& wfnFile, const std::map<std::string, std::string>& customVars) {
     for (auto& task : tasks) {
         // Apply replacement to parameter values
         for (auto& param : task.params) {
-            param.second = replaceInputPlaceholders(param.second, wfnFile);
+            param.second = replaceInputPlaceholders(param.second, wfnFile, customVars);
         }
         
         // Apply replacement to post-processing step parameters
         for (auto& step : task.postProcessSteps) {
             for (auto& param : step.second) {
-                param.second = replaceInputPlaceholders(param.second, wfnFile);
+                param.second = replaceInputPlaceholders(param.second, wfnFile, customVars);
             }
         }
         
         // Apply replacement to commands
         for (auto& command : task.commands) {
-            command = replaceInputPlaceholders(command, wfnFile);
+            command = replaceInputPlaceholders(command, wfnFile, customVars);
         }
     }
 }
 
-// Parse inp file, return all module tasks, optional wfn file, and core count
-std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileWithWfnAndCores(const std::string& inpFile) {
+// Parse inp file, return all module tasks, optional wfn file, core count, and custom variables
+std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std::string>> InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
     std::vector<ModuleTask> tasks;
     std::string wfnFile;
     int cores = -1;  // -1 means not specified
+    std::map<std::string, std::string> customVars;
     std::ifstream file(inpFile);
     if (!file.is_open()) {
         std::cerr << "Error: Cannot open inp file: " << inpFile << std::endl;
-        return {tasks, wfnFile, cores};
+        return {tasks, wfnFile, cores, customVars};
     }
     
     std::string line;
@@ -118,7 +131,7 @@ std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileW
     std::map<std::string, int> moduleBlockCounters;  // Track block indices for each module name
     
     while (std::getline(file, line)) {
-        // 保留前导空白用于模块行“顶格”判断
+        // 保留前导空白用于模块行"顶格"判断
         std::string noComment = Utils::removeInlineComment(line);
         std::string trimmed = Utils::trim(noComment);
 
@@ -126,15 +139,45 @@ std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileW
 
         // Check for wfn=xx format at the beginning of file
         if (trimmed.find("wfn=") == 0 && currentTask.moduleName.empty()) {
-            wfnFile = trimmed.substr(4);
+            wfnFile = Utils::trim(trimmed.substr(4));
             continue;
         }
         
         // Check for core=xx format at the beginning of file
         if (trimmed.find("core=") == 0 && currentTask.moduleName.empty()) {
-            std::string coreStr = trimmed.substr(5);
+            std::string coreStr = Utils::trim(trimmed.substr(5));
             cores = std::atoi(coreStr.c_str());
             continue;
+        }
+        
+        // Check for key=value format at the beginning of file (custom variables)
+        // This should come before module definitions, so check if no module is active
+        if (currentTask.moduleName.empty() && !inProcessMode && !inCommandMode) {
+            size_t eqPos = trimmed.find('=');
+            // Only treat as variable if:
+            // 1. Contains exactly one '='
+            // 2. Key is not empty
+            // 3. Key contains only alphanumeric and underscore (valid variable name)
+            // 4. Not a special keyword (wfn, core)
+            if (eqPos != std::string::npos && eqPos > 0 && eqPos < trimmed.length() - 1) {
+                std::string key = Utils::trim(trimmed.substr(0, eqPos));
+                std::string value = Utils::trim(trimmed.substr(eqPos + 1));
+                
+                // Validate key name (alphanumeric and underscore only)
+                bool validKey = true;
+                for (char c : key) {
+                    if (!isalnum(c) && c != '_') {
+                        validKey = false;
+                        break;
+                    }
+                }
+                
+                // Only accept if key is valid and not a special keyword
+                if (validKey && !key.empty() && key != "wfn" && key != "core") {
+                    customVars[key] = value;
+                    continue;
+                }
+            }
         }
         
         // Module start [module_name] 必须顶格
@@ -241,7 +284,13 @@ std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileW
     }
     
     file.close();
-    return {tasks, wfnFile, cores};
+    return {tasks, wfnFile, cores, customVars};
+}
+
+// Parse inp file, return all module tasks, optional wfn file, and core count (backward compatibility)
+std::tuple<std::vector<ModuleTask>, std::string, int> InputParser::parseInpFileWithWfnAndCores(const std::string& inpFile) {
+    auto result = parseInpFileWithWfnAndCoresAndVars(inpFile);
+    return {std::get<0>(result), std::get<1>(result), std::get<2>(result)};
 }
 
 // Parse inp file, return all module tasks and optional wfn file (backward compatibility)

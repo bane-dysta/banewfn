@@ -44,7 +44,7 @@ std::string UI::requestWavefunctionFile() {
     std::string wfnFile;
     
     while (true) {
-        std::cout << "Bane need a wavefunction file: ";
+        std::cout << "Bane need a wavefunction file (or other file supported by Multiwfn): ";
         std::getline(std::cin, wfnFile);
         
         // Remove quotes and trim whitespace

@@ -5,13 +5,14 @@ CXXFLAGS = -std=c++17 -Wall -Wextra -O2
 # Cross-compilation settings
 MINGW_CXX = x86_64-w64-mingw32-g++
 MINGW_CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -static-libgcc -static-libstdc++
+MINGW_WINDRES = x86_64-w64-mingw32-windres
 
 # Targets
 TARGET_LINUX = build/banewfn
 TARGET_WINDOWS = build/banewfn.exe
 SOURCES = src/banewfn.cpp src/config.cpp src/input.cpp src/ui.cpp src/utils.cpp
 OBJECTS_LINUX = build/banewfn.o build/config.o build/input.o build/ui.o build/utils.o
-OBJECTS_WINDOWS = build/banewfn_win.o build/config_win.o build/input_win.o build/ui_win.o build/utils_win.o
+OBJECTS_WINDOWS = build/banewfn_win.o build/config_win.o build/input_win.o build/ui_win.o build/utils_win.o build/banewfn_win_res.o
 
 # Default target (both platforms)
 all: both
@@ -33,6 +34,10 @@ $(TARGET_WINDOWS): $(OBJECTS_WINDOWS) | build
 
 build/%_win.o: src/%.cpp | build
 	$(MINGW_CXX) $(MINGW_CXXFLAGS) -c $< -o $@
+
+# Windows资源文件编译
+build/banewfn_win_res.o: src/banewfn.rc | build
+	$(MINGW_WINDRES) -O coff -i $< -o $@ -I src
 
 # Build both platforms
 both: linux windows

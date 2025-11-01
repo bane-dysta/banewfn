@@ -414,11 +414,12 @@ public:
     // Execute all module tasks
     bool executeAllTasks(const std::string& inpFile, const std::string& wfnFile, 
                         int cores, const ExecutionOptions& options) {
-        // Parse inp file, get all tasks, optional wfn file, and core count
-        auto parseResult = parseInpFileWithWfnAndCores(inpFile);
+        // Parse inp file, get all tasks, optional wfn file, core count, and custom variables
+        auto parseResult = InputParser::parseInpFileWithWfnAndCoresAndVars(inpFile);
         std::vector<ModuleTask> tasks = std::get<0>(parseResult);
         std::string inputWfnFile = std::get<1>(parseResult);
         int inputCores = std::get<2>(parseResult);
+        std::map<std::string, std::string> fileVars = std::get<3>(parseResult);
         
         // Use wfn file from input file if specified, otherwise use command line argument
         std::string finalWfnFile = inputWfnFile.empty() ? wfnFile : inputWfnFile;
@@ -430,8 +431,17 @@ public:
             std::cout << "Using core count from input file: " << finalCores << std::endl;
         }
         
-        // Apply placeholder replacement using the final wavefunction filename
-        InputParser::applyPlaceholderReplacement(tasks, finalWfnFile);
+        // Merge with command line variables (command line takes precedence)
+        std::map<std::string, std::string> allCustomVars = options.customVars;
+        for (const auto& var : fileVars) {
+            // Only add if not already set by command line
+            if (allCustomVars.find(var.first) == allCustomVars.end()) {
+                allCustomVars[var.first] = var.second;
+            }
+        }
+        
+        // Apply placeholder replacement using the final wavefunction filename and custom variables
+        InputParser::applyPlaceholderReplacement(tasks, finalWfnFile, allCustomVars);
         
         if (tasks.empty()) {
             std::cerr << "Error: No modules found in inp file" << std::endl;
@@ -494,6 +504,7 @@ void printUsage(const char* progName) {
     std::cout << "  -d, --dryrun        Generate command files only, don't execute (skip wait tasks)\n";
     std::cout << "  -s, --screen        Display output on screen instead of redirecting to files\n";
     std::cout << "  -w, --wfn <file>    Specify wavefunction file (.fchk/.wfn or other supported file)\n";
+    std::cout << "  -v, --var <key=val> Set custom variable for placeholder replacement (can be used multiple times)\n";
     std::cout << "  -h, --help          Show this help message\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << progName << " input.inp molecule.fchk\n";
@@ -502,6 +513,7 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " input.inp -w molecule.fchk --dryrun\n";
     std::cout << "  " << progName << " input.inp molecule.fchk --screen\n";
     std::cout << "  " << progName << " input.inp -w molecule.fchk -d -s -c 8\n";
+    std::cout << "  " << progName << " input.inp molecule.fchk -v myvar=value -v other=123\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -549,6 +561,37 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Error: -w/--wfn requires an argument" << std::endl;
                 return 1;
             }
+        } else if (arg == "-v" || arg == "--var") {
+            if (i + 1 < argc) {
+                std::string varArg = argv[i + 1];
+                size_t eqPos = varArg.find('=');
+                if (eqPos != std::string::npos && eqPos > 0 && eqPos < varArg.length() - 1) {
+                    std::string key = Utils::trim(varArg.substr(0, eqPos));
+                    std::string value = Utils::trim(varArg.substr(eqPos + 1));
+                    
+                    // Validate key name (alphanumeric and underscore only)
+                    bool validKey = true;
+                    for (char c : key) {
+                        if (!isalnum(c) && c != '_') {
+                            validKey = false;
+                            break;
+                        }
+                    }
+                    
+                    if (validKey && !key.empty()) {
+                        options.customVars[key] = value;
+                    } else {
+                        std::cerr << "Warning: Invalid variable name: " << key << std::endl;
+                    }
+                } else {
+                    std::cerr << "Error: -v/--var requires format key=value" << std::endl;
+                    return 1;
+                }
+                i++;
+            } else {
+                std::cerr << "Error: -v/--var requires an argument" << std::endl;
+                return 1;
+            }
         } else if (arg[0] == '-') {
             std::cerr << "Warning: Unknown option: " << arg << std::endl;
         } else {
@@ -564,10 +607,18 @@ int main(int argc, char* argv[]) {
         inpFile = UI::requestInputFile();
     }
     
-    // Check if input file contains wfn definition and core setting
-    auto parseResult = InputParser::parseInpFileWithWfnAndCores(inpFile);
+    // Check if input file contains wfn definition, core setting, and custom variables
+    auto parseResult = InputParser::parseInpFileWithWfnAndCoresAndVars(inpFile);
     std::string inputWfnFile = std::get<1>(parseResult);
     int inputCores = std::get<2>(parseResult);
+    std::map<std::string, std::string> inputVars = std::get<3>(parseResult);
+    
+    // Merge input file variables with command line variables (command line takes precedence)
+    for (const auto& var : inputVars) {
+        if (options.customVars.find(var.first) == options.customVars.end()) {
+            options.customVars[var.first] = var.second;
+        }
+    }
     
     // Priority order: 1) -w/--wfn parameter, 2) positional argument, 3) input file, 4) interactive input
     if (!wfnParam.empty()) {

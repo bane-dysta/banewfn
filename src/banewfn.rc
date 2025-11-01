@@ -1,0 +1,35 @@
+// banewfn Windows资源文件
+#include <windows.h>
+
+// 应用程序图标
+IDI_ICON1 ICON "source/mothwfn.ico"
+
+// 版本信息
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION  1,0,0,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0x0L
+FILEOS           VOS__WINDOWS32
+FILETYPE         VFT_APP
+FILESUBTYPE      VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "CompanyName",      "bane"
+            VALUE "FileDescription",  "banewfn"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "InternalName",     "banewfn"
+            VALUE "OriginalFilename", "banewfn.exe"
+            VALUE "ProductName",      "banewfn"
+            VALUE "ProductVersion",   "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END
+
