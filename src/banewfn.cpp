@@ -165,16 +165,26 @@ public:
         }
         
         // Generate output filename or screen output
-        std::stringstream cmd;
-        cmd << configManager.getConfig().multiwfnExec << " " << wfnFile << " < " << cmdFileName;
-        
+        std::string outFile;
         if (!options.screen) {
-            std::string outFile = task.moduleName + "_" + wfnBaseName;
+            outFile = task.moduleName + "_" + wfnBaseName;
             if (task.blockIndex > 0) {
                 outFile += "_" + std::to_string(task.blockIndex);
             }
             outFile += ".out";
-            cmd << " > " << outFile;
+            
+            std::ofstream outFileStream(outFile);
+            if (outFileStream.is_open()) {
+                outFileStream << UI::getLogoString();
+                outFileStream.close();
+            }
+        }
+        
+        std::stringstream cmd;
+        cmd << configManager.getConfig().multiwfnExec << " " << wfnFile << " < " << cmdFileName;
+        
+        if (!options.screen) {
+            cmd << " >> " << outFile;
         }
         
         if (cores > 0) {
@@ -422,7 +432,23 @@ public:
         std::map<std::string, std::string> fileVars = std::get<3>(parseResult);
         
         // Use wfn file from input file if specified, otherwise use command line argument
-        std::string finalWfnFile = inputWfnFile.empty() ? wfnFile : inputWfnFile;
+        std::string wfnPattern = inputWfnFile.empty() ? wfnFile : inputWfnFile;
+        
+        // 展开通配符
+        std::vector<std::string> wfnFiles = Utils::expandWildcard(wfnPattern);
+        
+        if (wfnFiles.empty()) {
+            std::cerr << "Error: No matching wavefunction files found for pattern: " << wfnPattern << std::endl;
+            return false;
+        }
+        
+        if (wfnFiles.size() > 1) {
+            std::cout << "Found " << wfnFiles.size() << " matching files:" << std::endl;
+            for (const auto& f : wfnFiles) {
+                std::cout << "  - " << f << std::endl;
+            }
+            std::cout << std::endl;
+        }
         
         // Use core count from input file if specified and no cores provided via command line
         int finalCores = cores;
@@ -439,9 +465,6 @@ public:
                 allCustomVars[var.first] = var.second;
             }
         }
-        
-        // Apply placeholder replacement using the final wavefunction filename and custom variables
-        InputParser::applyPlaceholderReplacement(tasks, finalWfnFile, allCustomVars);
         
         if (tasks.empty()) {
             std::cerr << "Error: No modules found in inp file" << std::endl;
@@ -476,11 +499,27 @@ public:
             }
         }
         
-        // Execute each module task in sequence
+        // 对每个匹配的文件执行任务
         bool allSuccess = true;
-        for (const auto& task : tasks) {
-            if (!executeModuleTask(task, finalWfnFile, finalCores, options)) {
-                allSuccess = false;
+        for (size_t fileIdx = 0; fileIdx < wfnFiles.size(); fileIdx++) {
+            std::string finalWfnFile = wfnFiles[fileIdx];
+            
+            if (wfnFiles.size() > 1) {
+                std::cout << "\n========================================" << std::endl;
+                std::cout << "Processing file " << (fileIdx + 1) << "/" << wfnFiles.size() 
+                          << ": " << finalWfnFile << std::endl;
+                std::cout << "========================================\n" << std::endl;
+            }
+            
+            // 为当前文件创建任务副本并应用占位符替换
+            std::vector<ModuleTask> fileTasks = tasks;
+            InputParser::applyPlaceholderReplacement(fileTasks, finalWfnFile, allCustomVars);
+            
+            // Execute each module task in sequence
+            for (const auto& task : fileTasks) {
+                if (!executeModuleTask(task, finalWfnFile, finalCores, options)) {
+                    allSuccess = false;
+                }
             }
         }
         

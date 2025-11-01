@@ -53,6 +53,13 @@ public:
      * @return 去除行内注释后的字符串（并已去首尾空白）
      */
     static std::string removeInlineComment(const std::string& str);
+    
+    /**
+     * @brief 展开通配符模式，返回匹配的文件列表
+     * @param pattern 包含通配符的文件路径模式（如 "*.fchk"）
+     * @return 匹配的文件路径列表（按字母顺序排序）
+     */
+    static std::vector<std::string> expandWildcard(const std::string& pattern);
 };
 
 #endif // UTILS_H

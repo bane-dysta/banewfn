@@ -6,6 +6,7 @@
 class UI {
 public:
     static void printLogo();
+    static std::string getLogoString();
     static std::string requestInputFile();
     static std::string requestWavefunctionFile();
     static std::string getUserInput(const std::string& prompt);

@@ -6,20 +6,27 @@
 #include <cctype>
 
 void UI::printLogo() {
-    std::cout << "\n";
-    std::cout << u8"   ____    _    _   _ _______        _______ _   _ \n";
-    std::cout << u8"  | __ )  / \\  | \\ | | ____\\ \\      / /  ___| \\ | |\n";
-    std::cout << u8"  |  _ \\ / _ \\ |  \\| |  _|  \\ \\ /\\ / /| |_  |  \\| |\n";
-    std::cout << u8"  | |_) / ___ \\| |\\  | |___  \\ V  V / |  _| | |\\  |\n";
-    std::cout << u8"  |____/_/   \\_\\_| \\_|_____|  \\_/\\_/  |_|   |_| \\_|\n";
-    std::cout << u8"  Author: Bane Dysta\n";
-    std::cout << u8"  Feedback: https://github.com/bane-dysta/banewfn\n";
-    std::cout << u8"  Tips: \n";
-    std::cout << u8"  This program only performs a workflow for Multiwfn, so if you use this program for publication,\n";
-    std::cout << u8"    you should cite Multiwfn as Prof. Lu mentioned in its manual.\n";
-    std::cout << u8"  If you would like to cite this program as well, you can use:\n";  
-    std::cout << u8"    Chiyuan Wei, banewfn, Version 1.0, https://github.com/bane-dysta/banewfn (accessed on day month year)\n";   
-    std::cout << "\n";
+    std::cout << getLogoString();
+}
+
+std::string UI::getLogoString() {
+    std::string logo;
+    logo += "\n";
+    logo += u8"   ____    _    _   _ _______        _______ _   _ \n";
+    logo += u8"  | __ )  / \\  | \\ | | ____\\ \\      / /  ___| \\ | |\n";
+    logo += u8"  |  _ \\ / _ \\ |  \\| |  _|  \\ \\ /\\ / /| |_  |  \\| |\n";
+    logo += u8"  | |_) / ___ \\| |\\  | |___  \\ V  V / |  _| | |\\  |\n";
+    logo += u8"  |____/_/   \\_\\_| \\_|_____|  \\_/\\_/  |_|   |_| \\_|\n";
+    logo += u8"  Author: Bane Dysta\n";
+    logo += u8"  Feedback: https://github.com/bane-dysta/banewfn\n";
+    logo += u8"  Tips: \n";
+    logo += u8"  This program only performs a workflow for Multiwfn, so if you use this program for publication,\n";
+    logo += u8"    you should cite Multiwfn as Prof. Lu mentioned in its manual.\n";
+    logo += u8"  If you would like to cite this program as well, you can use:\n";  
+    logo += u8"    Chiyuan Wei, banewfn, Version 1.0, https://github.com/bane-dysta/banewfn (accessed on day month year)\n";   
+    logo += u8"    \nNow start Multiwfn analysis!\n";   
+    logo += "\n";
+    return logo;
 }
 
 std::string UI::requestInputFile() {
