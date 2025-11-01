@@ -536,8 +536,9 @@ public:
 };
 
 void printUsage(const char* progName) {
+    std::cout << "Hmm... You need some advice? No problem, Bane will help you! :)\n";
     std::cout << "Usage: " << progName << " <input.inp> <molecule.fchk> [options]\n";
-    std::cout << "       " << progName << " <input.inp> -w <molecule.fchk> [options]\n";
+    std::cout << "       " << progName << " -w <molecule.fchk> <input.inp> [options]\n";
     std::cout << "\nOptions:\n";
     std::cout << "  -c, --cores <num>   Specify the number of CPU cores to use\n";
     std::cout << "  -d, --dryrun        Generate command files only, don't execute (skip wait tasks)\n";
@@ -547,11 +548,11 @@ void printUsage(const char* progName) {
     std::cout << "  -h, --help          Show this help message\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << progName << " input.inp molecule.fchk\n";
-    std::cout << "  " << progName << " input.inp -w molecule.fchk\n";
+    std::cout << "  " << progName << " -w molecule.fchk input.inp\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -c 8\n";
     std::cout << "  " << progName << " input.inp -w molecule.fchk --dryrun\n";
     std::cout << "  " << progName << " input.inp molecule.fchk --screen\n";
-    std::cout << "  " << progName << " input.inp -w molecule.fchk -d -s -c 8\n";
+    std::cout << "  " << progName << " -w molecule.fchk input.inp -d -s -c 8\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -v myvar=value -v other=123\n";
 }
 
