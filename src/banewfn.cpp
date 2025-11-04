@@ -7,6 +7,7 @@
 #include <set>
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <unistd.h>
 #include <sys/stat.h>
 #include "config.h"
@@ -333,28 +334,132 @@ public:
         }
         
 #ifdef PLATFORM_WINDOWS
-        scriptFileName += ".bat";
-        std::ofstream scriptFile(scriptFileName);
-        if (!scriptFile.is_open()) {
-            std::cerr << "Error: Cannot create batch file: " << scriptFileName << std::endl;
-            return false;
+        int result = 0;
+        
+        // Check if gitbash_exec is configured and first line is shebang #!/bin/bash
+        bool useGitBash = false;
+        if (!configManager.getConfig().gitbashExec.empty() && !task.commands.empty()) {
+            std::string firstLine = task.commands[0];
+            // Trim whitespace to check for shebang
+            std::string trimmedFirstLine = Utils::trim(firstLine);
+            if (trimmedFirstLine == "#!/bin/bash" || trimmedFirstLine.find("#!/bin/bash") == 0) {
+                useGitBash = true;
+            }
         }
         
-        // Write batch commands
-        for (const auto& cmd : task.commands) {
-            scriptFile << cmd << std::endl;
+        if (useGitBash) {
+            // Use Git Bash to execute shell script
+            scriptFileName += ".sh";
+            std::ofstream scriptFile(scriptFileName);
+            if (!scriptFile.is_open()) {
+                std::cerr << "Error: Cannot create shell script: " << scriptFileName << std::endl;
+                return false;
+            }
+            
+            // Write shell commands (including shebang if present)
+            for (const auto& cmd : task.commands) {
+                scriptFile << cmd << std::endl;
+            }
+            scriptFile.close();
+            
+            // Execute using Git Bash with -c parameter
+            // Convert Windows path to absolute path for bash
+            char absPath[MAX_PATH];
+            DWORD pathLen = GetFullPathNameA(scriptFileName.c_str(), MAX_PATH, absPath, nullptr);
+            std::string bashPath;
+            if (pathLen > 0 && pathLen < MAX_PATH) {
+                bashPath = absPath;
+            } else {
+                bashPath = scriptFileName;
+            }
+            // Convert Windows path separators to forward slashes for bash
+            size_t pos = 0;
+            while ((pos = bashPath.find('\\', pos)) != std::string::npos) {
+                bashPath.replace(pos, 1, "/");
+                pos += 1;
+            }
+            
+            // Build command string for display
+            std::stringstream cmdDisplay;
+            cmdDisplay << "\"" << configManager.getConfig().gitbashExec << "\" -c \"bash " << bashPath << "\"";
+            std::cout << "Running script with Git Bash: " << cmdDisplay.str() << " ..." << std::endl;
+            
+            // Use CreateProcess to avoid cmd.exe quote parsing issues
+            std::string gitbashPath = configManager.getConfig().gitbashExec;
+            std::string commandArg = "bash " + bashPath;
+            
+            // Prepare command line for CreateProcess
+            // When lpApplicationName is specified, lpCommandLine should start with the program name
+            // Format: "program_path" -c "bash script_path"
+            std::string cmdLine = "\"" + gitbashPath + "\" -c \"" + commandArg + "\"";
+            
+            STARTUPINFOA si;
+            PROCESS_INFORMATION pi;
+            memset(&si, 0, sizeof(si));
+            memset(&pi, 0, sizeof(pi));
+            si.cb = sizeof(si);
+            si.dwFlags |= STARTF_USESTDHANDLES;
+            si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+            si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+            si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+            
+            // CreateProcess requires mutable string for lpCommandLine
+            std::vector<char> cmdLineBuf(cmdLine.begin(), cmdLine.end());
+            cmdLineBuf.push_back('\0');
+            
+            BOOL success = CreateProcessA(
+                nullptr,                       // lpApplicationName (null to use command line)
+                cmdLineBuf.data(),            // lpCommandLine (full command line)
+                nullptr,                       // lpProcessAttributes
+                nullptr,                       // lpThreadAttributes
+                TRUE,                          // bInheritHandles
+                0,                            // dwCreationFlags
+                nullptr,                       // lpEnvironment
+                nullptr,                       // lpCurrentDirectory
+                &si,                          // lpStartupInfo
+                &pi                           // lpProcessInformation
+            );
+            
+            if (success) {
+                // Wait for process to complete
+                WaitForSingleObject(pi.hProcess, INFINITE);
+                DWORD exitCode = 0;
+                GetExitCodeProcess(pi.hProcess, &exitCode);
+                result = static_cast<int>(exitCode);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            } else {
+                std::cerr << "Error: Failed to start Git Bash process. Error code: " << GetLastError() << std::endl;
+                result = 1;
+            }
+            
+            // Clean up shell script
+            remove(scriptFileName.c_str());
+        } else {
+            // Use default batch script
+            scriptFileName += ".bat";
+            std::ofstream scriptFile(scriptFileName);
+            if (!scriptFile.is_open()) {
+                std::cerr << "Error: Cannot create batch file: " << scriptFileName << std::endl;
+                return false;
+            }
+            
+            // Write batch commands
+            for (const auto& cmd : task.commands) {
+                scriptFile << cmd << std::endl;
+            }
+            scriptFile.close();
+            
+            // Execute batch file
+            std::stringstream cmd;
+            cmd << "cmd /c \"" << scriptFileName << "\"";
+            std::cout << "Running script: " << cmd.str() << " ..." << std::endl;
+            
+            result = system(cmd.str().c_str());
+            
+            // Clean up batch file
+            remove(scriptFileName.c_str());
         }
-        scriptFile.close();
-        
-        // Execute batch file
-        std::stringstream cmd;
-        cmd << "cmd /c \"" << scriptFileName << "\"";
-        std::cout << "Running script: " << cmd.str() << " ..." << std::endl;
-        
-        int result = system(cmd.str().c_str());
-        
-        // Clean up batch file
-        remove(scriptFileName.c_str());
         
 #else
         scriptFileName += ".sh";

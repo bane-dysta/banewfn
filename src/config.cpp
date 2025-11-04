@@ -184,6 +184,12 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile) {
                 config.confPath = expandPath(value);
             } else if (key == "cores") {
                 config.cores = std::stoi(value);
+            } else if (key == "gitbash_exec") {
+#ifdef PLATFORM_WINDOWS
+                config.gitbashExec = expandPath(value);
+#else
+                // Ignore on non-Windows platforms
+#endif
             }
         }
     }

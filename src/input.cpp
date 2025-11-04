@@ -135,6 +135,57 @@ std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std:
         std::string noComment = Utils::removeInlineComment(line);
         std::string trimmed = Utils::trim(noComment);
 
+        // In command mode, check for special keywords first (before storing raw line)
+        // Special keywords still need to be detected even in command mode
+        bool isSpecialKeyword = false;
+        
+        // Enter command mode
+        if (trimmed == "%command") {
+            isSpecialKeyword = true;
+            // Allow top-level %command without module definition ("裸command")
+            if (currentTask.moduleName.empty()) {
+                currentTask = ModuleTask();
+                currentTask.useWait = false;
+                currentTask.blockIndex = moduleBlockCounters[currentTask.moduleName]++;
+            }
+            inCommandMode = true;
+            inProcessMode = false;
+            continue;
+        }
+        
+        // End current module with "end"
+        if (trimmed == "end") {
+            isSpecialKeyword = true;
+            if (!currentTask.moduleName.empty() || !currentTask.commands.empty()) {
+                tasks.push_back(currentTask);
+                currentTask = ModuleTask();
+            }
+            inProcessMode = false;
+            inCommandMode = false;
+            continue;
+        }
+        
+        // End current module with "wait" (interactive mode)
+        if (trimmed == "wait") {
+            isSpecialKeyword = true;
+            if (!currentTask.moduleName.empty()) {
+                currentTask.useWait = true;
+                tasks.push_back(currentTask);
+                currentTask = ModuleTask();
+            }
+            inProcessMode = false;
+            inCommandMode = false;
+            continue;
+        }
+        
+        // In command mode, store raw line (including comments and empty lines) if not special keyword
+        if (inCommandMode && !isSpecialKeyword) {
+            // Command mode: store the entire raw line as a command (preserve comments and empty lines)
+            currentTask.commands.push_back(line);
+            continue;
+        }
+
+        // For non-command mode, skip empty lines
         if (trimmed.empty()) continue;
 
         // Check for wfn=xx format at the beginning of file
@@ -210,46 +261,11 @@ std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std:
             continue;
         }
         
-        // Enter command mode
-        if (trimmed == "%command") {
-            // Allow top-level %command without module definition ("裸command")
-            if (currentTask.moduleName.empty()) {
-                currentTask = ModuleTask();
-                currentTask.useWait = false;
-                currentTask.blockIndex = moduleBlockCounters[currentTask.moduleName]++;
-            }
-            inCommandMode = true;
-            inProcessMode = false;
-            continue;
-        }
-        
-        // End current module with "end"
-        if (trimmed == "end") {
-            if (!currentTask.moduleName.empty() || !currentTask.commands.empty()) {
-                tasks.push_back(currentTask);
-                currentTask = ModuleTask();
-            }
-            inProcessMode = false;
-            inCommandMode = false;
-            continue;
-        }
-        
-        // End current module with "wait" (interactive mode)
-        if (trimmed == "wait") {
-            if (!currentTask.moduleName.empty()) {
-                currentTask.useWait = true;
-                tasks.push_back(currentTask);
-                currentTask = ModuleTask();
-            }
-            inProcessMode = false;
-            inCommandMode = false;
-            continue;
-        }
-        
         // Parse parameters, post-processing commands, or shell commands
         if (inCommandMode) {
-            // Command mode: store the entire line as a command (placeholder replacement will be done later)
-            currentTask.commands.push_back(trimmed);
+            // This should not be reached, as command mode lines are handled above
+            // But keep as fallback
+            currentTask.commands.push_back(line);
         } else {
             std::vector<std::string> tokens = split(trimmed, ' ');
             if (tokens.empty()) continue;

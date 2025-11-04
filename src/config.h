@@ -28,6 +28,7 @@ struct BaneWfnConfig {
     std::string multiwfnExec;
     std::string confPath;
     int cores;
+    std::string gitbashExec;  // Git Bash executable path (Windows only)
 };
 
 // Utility functions
