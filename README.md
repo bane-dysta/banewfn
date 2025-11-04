@@ -214,6 +214,33 @@ banewfn <input.inp> <molecule.fchk> [选项]
 banewfn -w <molecule.fchk> <input.inp> [选项]
 ```
 
+### 脚本化与双击运行
+- Windows：可为自定义后缀（如 `.bw`）关联 `banewfn`，双击 `.bw` 文件即运行；示例：
+  ```ini
+  wfn=*.fchk
+  [hole-ele]
+  state 1
+  %process
+      cub
+  %command
+  move hole.cub ${input}_s1_hole.cub
+  move electron.cub ${input}_s1_ele.cub
+  end
+  ```
+- Linux：支持 shebang 脚本化，示例保存为可执行的 `hole.bw` 后可直接运行：
+  ```ini
+  #!/usr/bin/env banewfn
+  wfn=*.fchk
+  [hole-ele]
+  state 1
+  %process
+      cub
+  %command
+  mv hole.cub ${input}_s1_hole.cub
+  mv electron.cub ${input}_s1_ele.cub
+  end
+  ```
+
 波函数文件可以通过以下方式指定（优先级从高到低）：
 1. 命令行选项 `-w/--wfn`
 2. 命令行位置参数（第二个参数）
@@ -477,7 +504,12 @@ g++ -std=c++11 -o banewfn src/*.cpp
    - 支持引号包裹的参数值（单引号或双引号）
 5. **通配符支持**: 在使用通配符时（如 `*.fchk`），确保引号正确，避免 shell 展开
 6. **行内注释**: 配置文件和输入文件支持 `#` 行内注释，但引号内的 `#` 会被保留；可使用 `\#` 转义
-7. **交互模式**: 使用 `wait` 关键字的任务在 `--dryrun` 模式下会被跳过
+7. **命令块注释与空行行为**:
+   - 自2025.11.4更新后，`%command` 块内不再移除空行，也不再移除 `#` 注释，避免影响 shell/batch 脚本可读性与语义。
+8. **Windows Git Bash 支持**:
+   - 在 `banewfn.rc` 中设置 `gitbash_exec`（如 `C:\\Program Files\\Git\\bin\\bash.exe`）。
+   - 若 `%command` 块首行写 `#!/bin/bash`，则脚本将通过 Git Bash 执行（相当于：`"gitbash_exec" -c "script.sh"`）。
+9. **交互模式**: 使用 `wait` 关键字的任务在 `--dryrun` 模式下会被跳过
 
 ## 扩展开发
 
@@ -497,6 +529,104 @@ g++ -std=c++11 -o banewfn src/*.cpp
 - 通过命令行 `-v/--var` 选项传递变量
 - 使用 `$参数名` 或 `${参数名}` 在命令中引用参数
 - 使用 `${参数名:-默认值}` 提供默认值
+
+### 示例与工作流
+以下示例均可以在release.7z的exmaple文件夹内找到。
+#### 1) NICS-2D（两步脚本流程）
+- 第一步：根据结构拟合环平面并生成下一步 `bw` 文件（以苯为例，`ring` 需按体系修改）：
+  ```ini
+  ring=1,3,5
+
+  %command
+      @echo off
+      echo \#p b3lyp/6-31+G* NMR > template.gjf
+      echo. >> template.gjf
+      echo template file >> template.gjf
+      echo. >> template.gjf
+      echo   0  1 >> template.gjf
+      echo [geometry] >> template.gjf
+      echo. >> template.gjf
+      echo. >> template.gjf
+  end
+
+  [aromatic]
+  %process
+      gen2dinp ring ${ring}
+  end
+
+  %command
+      @echo off
+      if exist template.gjf del template.gjf
+      setlocal enabledelayedexpansion
+      for /f "tokens=6,7,8 delims= " %%a in ('findstr /C:"The unit normal vector is " aromatic_${input}.out') do (
+          set "X=%%a"
+          set "Y=%%b"
+          set "Z=%%c"
+      )
+      set vector=!X!,!Y!,!Z!
+      echo [aromatic] > nics2.bw
+      echo %%%%process >> nics2.bw
+      echo     nics2d ring ${ring} vector !vector! >> nics2.bw
+      echo wait >> nics2.bw
+  end
+  ```
+- 第二步：进行 Gaussian 计算后，执行 `nics2.bw`；若使用 `wait`，可在 Multiwfn 后处理界面继续交互调整绘图风格；也可用 `end` 直接生成样图。
+
+#### 2) ESP 自动处理（支持 Git Bash）
+```ini
+[grid]
+%process
+    electron
+    esp
+%command
+#!/bin/bash
+    mkdir -p ESP
+    mv density.cub ESP/density1.cub
+    mv totesp.cub ESP/ESP1.cub
+
+    cat << EOF > ESP/esp.bat
+    vmd -e esp.vmd
+EOF
+
+    cat << EOF2 > ESP/esp.vmd
+    source D:/program/VMD/scripts/ESPiso.vmd
+    source D:/program/VMD/scripts/ESPext.vmd
+    set colorlow -20
+    set colorhigh 20
+    puts "unit: kcal/mol"
+EOF2
+end
+
+[surface]
+%process
+    espext
+%command
+#!/bin/bash
+    mv vtx.pdb ESP/vtx1.pdb
+    mv mol.pdb ESP/mol1.pdb
+
+    unit=$(grep "REMARK.*Unit of B-factor field" surfanalysis.pdb | awk '{print $NF}')
+    if [ -z "$unit" ]; then unit="unknown"; fi
+    printf "%5s %6s %4s %15s\n" "index" "serial" "type" "Unit($unit)" > index.txt
+    index=0; while IFS= read -r line; do
+        if [[ $line =~ ^HETATM ]]; then
+            serial=$(echo "$line" | awk '{print $2}')
+            type=$(echo "$line" | awk '{print $3}')
+            value=$(echo "$line" | cut -c61-66 | awk '{print $1}')
+            printf "%5d %6d %4s %8s\n" "$index" "$serial" "$type" "$value" >> index.txt
+            ((index++))
+        fi
+    done < surfanalysis.pdb
+
+    mv index.txt *.out surfanalysis.pdb ESP
+end
+```
+- 说明：若在 Windows 需要以 Bash 执行上述脚本，请在 `banewfn.rc` 配置 `gitbash_exec`，并保持 `%command` 首行 `#!/bin/bash`。
+
+#### 3) example文件夹内其他示例与联动
+- `weak_interaction`：一键 IRI/IGM/IGMH 流程，含 VMD/gnuplot 可视化脚本。
+- `MO`：常用前线轨道导出 `fmo.bw`；`nto.bw` 可导出 NTO 轨道，并可与 `fmo.bw` 联动（先导出 NTO，再导出 HONTO/LUNTO）。
+- 示例打包：请参考发布压缩包（Windows 提供 `.exe`，Linux 提供无后缀可执行）。
 
 ### 输入文件语法要点
 - 模块定义 `[模块名]` 必须顶格（不能有前导空白）
