@@ -189,12 +189,18 @@ confpath=/path/to/conf/directory
 
 # 默认使用的CPU核心数（可通过命令行或输入文件覆盖）
 cores=4
+
+# Windows（可选）：Git Bash 可执行文件路径，用于执行首行含 `#!/bin/bash` 的 %command 脚本
+# 仅在 Windows 下需要，Linux/MacOS 不需要设置
+# 建议带引号以处理空格路径
+# gitbash_exec="C:\Program Files\Git\bin\bash.exe"
 ```
 
 #### 配置项说明：
 - `Multiwfn_exec`: Multiwfn 可执行文件路径或命令名（如果在 PATH 中）
 - `confpath`: 模块配置文件（`.conf`）所在的目录路径
 - `cores`: 默认使用的CPU核心数（可通过 `-c/--cores` 选项或输入文件中的 `core=N` 覆盖）
+- `gitbash_exec`（Windows 可选）: Git Bash 的 `bash.exe` 路径；当 `%command` 块首行是 `#!/bin/bash` 时，用该 Bash 解释器执行脚本。
 
 **注意**：配置文件中支持行内注释（`#` 后面的内容会被忽略），但引号内的 `"#"`、`"'#'"` 会被保留。也可以使用 `\#` 转义字面 `#`。
 
@@ -214,8 +220,8 @@ banewfn <input.inp> <molecule.fchk> [选项]
 banewfn -w <molecule.fchk> <input.inp> [选项]
 ```
 
-### 脚本化与双击运行
-- Windows：可为自定义后缀（如 `.bw`）关联 `banewfn`，双击 `.bw` 文件即运行；示例：
+### 脚本化
+- Windows：可为自定义后缀（如 `.bw`）关联 `banewfn`，并善用wfn=*.fchk自动选择波函数文件，做到双击 `.bw` 文件批量处理；示例：
   ```ini
   wfn=*.fchk
   [hole-ele]
@@ -507,7 +513,7 @@ g++ -std=c++11 -o banewfn src/*.cpp
 7. **命令块注释与空行行为**:
    - 自2025.11.4更新后，`%command` 块内不再移除空行，也不再移除 `#` 注释，避免影响 shell/batch 脚本可读性与语义。
 8. **Windows Git Bash 支持**:
-   - 在 `banewfn.rc` 中设置 `gitbash_exec`（如 `C:\\Program Files\\Git\\bin\\bash.exe`）。
+   - 在 `banewfn.rc` 中设置 `gitbash_exec`（如 `C:\Program Files\Git\bin\bash.exe`）。
    - 若 `%command` 块首行写 `#!/bin/bash`，则脚本将通过 Git Bash 执行（相当于：`"gitbash_exec" -c "script.sh"`）。
 9. **交互模式**: 使用 `wait` 关键字的任务在 `--dryrun` 模式下会被跳过
 
@@ -531,7 +537,7 @@ g++ -std=c++11 -o banewfn src/*.cpp
 - 使用 `${参数名:-默认值}` 提供默认值
 
 ### 示例与工作流
-以下示例均可以在release.7z的exmaple文件夹内找到。
+以下示例均可以在release.7z的example文件夹内找到。
 #### 1) NICS-2D（两步脚本流程）
 - 第一步：根据结构拟合环平面并生成下一步 `bw` 文件（以苯为例，`ring` 需按体系修改）：
   ```ini
