@@ -534,7 +534,7 @@ public:
         std::vector<ModuleTask> tasks = std::get<0>(parseResult);
         std::string inputWfnFile = std::get<1>(parseResult);
         int inputCores = std::get<2>(parseResult);
-        std::map<std::string, std::string> fileVars = std::get<3>(parseResult);
+        std::map<std::string, std::vector<std::string>> fileVars = std::get<3>(parseResult);
         
         // Use wfn file from input file if specified, otherwise use command line argument
         std::string wfnPattern = inputWfnFile.empty() ? wfnFile : inputWfnFile;
@@ -563,11 +563,32 @@ public:
         }
         
         // Merge with command line variables (command line takes precedence)
-        std::map<std::string, std::string> allCustomVars = options.customVars;
+        std::map<std::string, std::vector<std::string>> allCustomVars = options.customVars;
         for (const auto& var : fileVars) {
             // Only add if not already set by command line
             if (allCustomVars.find(var.first) == allCustomVars.end()) {
                 allCustomVars[var.first] = var.second;
+            }
+        }
+        
+        // Check if any variable is an array (has more than one element)
+        // Find the array variable with maximum size to determine iteration count
+        size_t maxArraySize = 1;
+        std::string arrayVarName;
+        for (const auto& var : allCustomVars) {
+            if (var.second.size() > maxArraySize) {
+                maxArraySize = var.second.size();
+                arrayVarName = var.first;
+            }
+        }
+        
+        // If multiple arrays exist, they must have the same size
+        for (const auto& var : allCustomVars) {
+            if (var.second.size() > 1 && var.second.size() != maxArraySize) {
+                std::cerr << "Error: Array variables have different sizes. Variable '" 
+                         << var.first << "' has " << var.second.size() 
+                         << " elements, but maximum is " << maxArraySize << std::endl;
+                return false;
             }
         }
         
@@ -604,26 +625,53 @@ public:
             }
         }
         
-        // 对每个匹配的文件执行任务
+        // 对每个匹配的文件和每个数组元素执行任务
         bool allSuccess = true;
         for (size_t fileIdx = 0; fileIdx < wfnFiles.size(); fileIdx++) {
             std::string finalWfnFile = wfnFiles[fileIdx];
             
-            if (wfnFiles.size() > 1) {
-                std::cout << "\n========================================" << std::endl;
-                std::cout << "Processing file " << (fileIdx + 1) << "/" << wfnFiles.size() 
-                          << ": " << finalWfnFile << std::endl;
-                std::cout << "========================================\n" << std::endl;
-            }
-            
-            // 为当前文件创建任务副本并应用占位符替换
-            std::vector<ModuleTask> fileTasks = tasks;
-            InputParser::applyPlaceholderReplacement(fileTasks, finalWfnFile, allCustomVars);
-            
-            // Execute each module task in sequence
-            for (const auto& task : fileTasks) {
-                if (!executeModuleTask(task, finalWfnFile, finalCores, options)) {
-                    allSuccess = false;
+            // 对每个数组索引执行（如果有数组变量）
+            for (size_t arrayIdx = 0; arrayIdx < maxArraySize; arrayIdx++) {
+                // 创建当前迭代的变量映射（使用数组的当前索引值）
+                std::map<std::string, std::vector<std::string>> currentVars;
+                for (const auto& var : allCustomVars) {
+                    if (var.second.size() > 1) {
+                        // 数组变量：使用当前索引的值
+                        currentVars[var.first] = {var.second[arrayIdx]};
+                    } else {
+                        // 单个值：保持不变
+                        currentVars[var.first] = var.second;
+                    }
+                }
+                
+                // 显示当前执行信息
+                if (wfnFiles.size() > 1 || maxArraySize > 1) {
+                    std::cout << "\n========================================" << std::endl;
+                    if (wfnFiles.size() > 1) {
+                        std::cout << "Processing file " << (fileIdx + 1) << "/" << wfnFiles.size() 
+                                  << ": " << finalWfnFile;
+                    }
+                    if (maxArraySize > 1) {
+                        if (wfnFiles.size() > 1) std::cout << " | ";
+                        std::cout << "Iteration " << (arrayIdx + 1) << "/" << maxArraySize;
+                        // 显示当前数组变量的值
+                        if (!arrayVarName.empty() && currentVars.find(arrayVarName) != currentVars.end()) {
+                            std::cout << " (" << arrayVarName << "=" << currentVars[arrayVarName][0] << ")";
+                        }
+                    }
+                    std::cout << std::endl;
+                    std::cout << "========================================\n" << std::endl;
+                }
+                
+                // 为当前文件和数组索引创建任务副本并应用占位符替换
+                std::vector<ModuleTask> fileTasks = tasks;
+                InputParser::applyPlaceholderReplacement(fileTasks, finalWfnFile, currentVars);
+                
+                // Execute each module task in sequence
+                for (const auto& task : fileTasks) {
+                    if (!executeModuleTask(task, finalWfnFile, finalCores, options)) {
+                        allSuccess = false;
+                    }
                 }
             }
         }
@@ -724,7 +772,8 @@ int main(int argc, char* argv[]) {
                     }
                     
                     if (validKey && !key.empty()) {
-                        options.customVars[key] = value;
+                        // Parse value as bash array (supports both array and single value)
+                        options.customVars[key] = Utils::parseBashArray(value);
                     } else {
                         std::cerr << "Warning: Invalid variable name: " << key << std::endl;
                     }
@@ -756,7 +805,7 @@ int main(int argc, char* argv[]) {
     auto parseResult = InputParser::parseInpFileWithWfnAndCoresAndVars(inpFile);
     std::string inputWfnFile = std::get<1>(parseResult);
     int inputCores = std::get<2>(parseResult);
-    std::map<std::string, std::string> inputVars = std::get<3>(parseResult);
+    std::map<std::string, std::vector<std::string>> inputVars = std::get<3>(parseResult);
     
     // Merge input file variables with command line variables (command line takes precedence)
     for (const auto& var : inputVars) {

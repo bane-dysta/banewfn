@@ -164,3 +164,31 @@ std::vector<std::string> Utils::expandWildcard(const std::string& pattern) {
     
     return result;
 }
+
+std::vector<std::string> Utils::parseBashArray(const std::string& value) {
+    std::vector<std::string> result;
+    std::string trimmed = trim(value);
+    
+    // 检查是否是数组语法: (value1 value2 value3 ...)
+    if (trimmed.length() >= 2 && trimmed[0] == '(' && trimmed[trimmed.length() - 1] == ')') {
+        // 提取括号内的内容
+        std::string inside = trimmed.substr(1, trimmed.length() - 2);
+        inside = trim(inside);
+        
+        if (!inside.empty()) {
+            // 按空格分割数组元素
+            std::stringstream ss(inside);
+            std::string token;
+            while (ss >> token) {
+                // 去除每个元素的引号（如果存在）
+                token = trimQuotes(token);
+                result.push_back(token);
+            }
+        }
+    } else {
+        // 不是数组语法，返回单个元素
+        result.push_back(trimmed);
+    }
+    
+    return result;
+}

@@ -13,7 +13,8 @@ std::vector<std::string> InputParser::split(const std::string& str, char delimit
 // Replace input file placeholders ($input and ${input}) with wavefunction filename without extension
 // Additionally, support ${name} -> read value from file "name" in current directory (trimmed)
 // Also support custom variables from command line or file header
-std::string InputParser::replaceInputPlaceholders(const std::string& text, const std::string& wfnFile, const std::map<std::string, std::string>& customVars) {
+// For array variables, use the first element for replacement
+std::string InputParser::replaceInputPlaceholders(const std::string& text, const std::string& wfnFile, const std::map<std::string, std::vector<std::string>>& customVars) {
     std::string result = text;
     
     // Extract filename without extension from wavefunction file path
@@ -55,8 +56,9 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
         
         // Priority 1: Check custom variables from command line or file header
         auto customIt = customVars.find(varName);
-        if (customIt != customVars.end()) {
-            replacement = customIt->second;
+        if (customIt != customVars.end() && !customIt->second.empty()) {
+            // For array variables, use the first element
+            replacement = customIt->second[0];
             found = true;
         }
         // Priority 2: Check if the variable name is "input"
@@ -91,7 +93,7 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
 }
 
 // Apply placeholder replacement to all tasks using wavefunction filename and custom variables
-void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, const std::string& wfnFile, const std::map<std::string, std::string>& customVars) {
+void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, const std::string& wfnFile, const std::map<std::string, std::vector<std::string>>& customVars) {
     for (auto& task : tasks) {
         // Apply replacement to parameter values
         for (auto& param : task.params) {
@@ -113,11 +115,11 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
 }
 
 // Parse inp file, return all module tasks, optional wfn file, core count, and custom variables
-std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std::string>> InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
+std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std::vector<std::string>>> InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
     std::vector<ModuleTask> tasks;
     std::string wfnFile;
     int cores = -1;  // -1 means not specified
-    std::map<std::string, std::string> customVars;
+    std::map<std::string, std::vector<std::string>> customVars;
     std::ifstream file(inpFile);
     if (!file.is_open()) {
         std::cerr << "Error: Cannot open inp file: " << inpFile << std::endl;
@@ -225,7 +227,8 @@ std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std:
                 
                 // Only accept if key is valid and not a special keyword
                 if (validKey && !key.empty() && key != "wfn" && key != "core") {
-                    customVars[key] = value;
+                    // Parse value as bash array (supports both array and single value)
+                    customVars[key] = Utils::parseBashArray(value);
                     continue;
                 }
             }

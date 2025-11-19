@@ -19,7 +19,7 @@ struct ModuleTask {
 struct ExecutionOptions {
     bool dryrun;
     bool screen;
-    std::map<std::string, std::string> customVars;  // Custom variables from command line
+    std::map<std::string, std::vector<std::string>> customVars;  // Custom variables from command line (supports arrays)
     
     ExecutionOptions() : dryrun(false), screen(false) {}
 };
@@ -34,16 +34,17 @@ public:
     // Parse inp file, return all module tasks, optional wfn file, and core count
     static std::tuple<std::vector<ModuleTask>, std::string, int> parseInpFileWithWfnAndCores(const std::string& inpFile);
     // Parse inp file, return all module tasks, optional wfn file, core count, and custom variables
-    static std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std::string>> parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile);
+    static std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std::vector<std::string>>> parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile);
     // Apply placeholder replacement to all tasks using wavefunction filename and custom variables
-    static void applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, const std::string& wfnFile, const std::map<std::string, std::string>& customVars = std::map<std::string, std::string>());
+    static void applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, const std::string& wfnFile, const std::map<std::string, std::vector<std::string>>& customVars = std::map<std::string, std::vector<std::string>>());
     
 private:
     // Utility function: split string
     static std::vector<std::string> split(const std::string& str, char delimiter);
     // Replace input file placeholders ($input and ${input}) with wavefunction filename without extension
     // Also support custom variables from command line or file header
-    static std::string replaceInputPlaceholders(const std::string& text, const std::string& wfnFile, const std::map<std::string, std::string>& customVars = std::map<std::string, std::string>());
+    // customVars: map from variable name to vector of values (for arrays, use first element for replacement)
+    static std::string replaceInputPlaceholders(const std::string& text, const std::string& wfnFile, const std::map<std::string, std::vector<std::string>>& customVars = std::map<std::string, std::vector<std::string>>());
 };
 
 #endif // INPUT_H

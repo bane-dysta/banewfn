@@ -60,6 +60,13 @@ public:
      * @return 匹配的文件路径列表（按字母顺序排序）
      */
     static std::vector<std::string> expandWildcard(const std::string& pattern);
+    
+    /**
+     * @brief 解析bash数组语法，如 "state=(1 2 3 4 5)" 或 "(1 2 3 4 5)"
+     * @param value 输入字符串，可能是数组语法或普通值
+     * @return 如果是数组语法，返回解析后的字符串向量；否则返回包含单个元素的向量
+     */
+    static std::vector<std::string> parseBashArray(const std::string& value);
 };
 
 #endif // UTILS_H
