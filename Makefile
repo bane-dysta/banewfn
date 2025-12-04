@@ -7,6 +7,10 @@ MINGW_CXX = x86_64-w64-mingw32-g++
 MINGW_CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -static-libgcc -static-libstdc++
 MINGW_WINDRES = x86_64-w64-mingw32-windres
 
+# Install settings
+INSTALL_BINDIR ?= /usr/local/bin
+INSTALL_CONFDIR ?= $(HOME)/.bane/wfn
+
 # Targets
 TARGET_LINUX = build/banewfn
 TARGET_WINDOWS = build/banewfn.exe
@@ -14,8 +18,8 @@ SOURCES = src/banewfn.cpp src/config.cpp src/input.cpp src/ui.cpp src/utils.cpp
 OBJECTS_LINUX = build/banewfn.o build/config.o build/input.o build/ui.o build/utils.o
 OBJECTS_WINDOWS = build/banewfn_win.o build/config_win.o build/input_win.o build/ui_win.o build/utils_win.o build/banewfn_win_res.o
 
-# Default target (both platforms)
-all: both
+# Default target (Linux only)
+all: linux
 
 # Linux build
 linux: $(TARGET_LINUX)
@@ -43,10 +47,18 @@ build/banewfn_win_res.o: src/banewfn.rc | build
 both: linux windows
 	cp conf/banewfn.rc build/
 
+# Install (Linux executable + config files)
+install: linux
+	mkdir -p $(INSTALL_BINDIR)
+	cp $(TARGET_LINUX) $(INSTALL_BINDIR)/
+	chmod +x $(INSTALL_BINDIR)/banewfn
+	mkdir -p $(INSTALL_CONFDIR)
+	cp conf/* $(INSTALL_CONFDIR)/
+
 build:
 	mkdir -p build
 
 clean:
 	rm -rf build/*
 
-.PHONY: all linux windows both clean
+.PHONY: all linux windows both clean install
