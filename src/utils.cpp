@@ -189,6 +189,61 @@ std::vector<std::string> Utils::parseBashArray(const std::string& value) {
         // 不是数组语法，返回单个元素
         result.push_back(trimmed);
     }
-    
+
+    return result;
+}
+
+std::vector<std::string> Utils::parseCommandLineArgs(const std::string& argsStr) {
+    std::vector<std::string> result;
+    std::string currentArg;
+    bool inSingleQuote = false;
+    bool inDoubleQuote = false;
+    bool escaping = false;
+
+    for (size_t i = 0; i < argsStr.length(); ++i) {
+        char c = argsStr[i];
+
+        if (escaping) {
+            currentArg += c;
+            escaping = false;
+            continue;
+        }
+
+        if (c == '\\') {
+            escaping = true;
+            continue;
+        }
+
+        if (!inDoubleQuote && c == '\'') {
+            inSingleQuote = !inSingleQuote;
+            continue;
+        }
+
+        if (!inSingleQuote && c == '"') {
+            inDoubleQuote = !inDoubleQuote;
+            continue;
+        }
+
+        if (!inSingleQuote && !inDoubleQuote && (c == ' ' || c == '\t')) {
+            if (!currentArg.empty()) {
+                result.push_back(currentArg);
+                currentArg.clear();
+            }
+            continue;
+        }
+
+        currentArg += c;
+    }
+
+    if (!currentArg.empty()) {
+        result.push_back(currentArg);
+    }
+
+    // 如果解析过程中仍有未闭合的引号，说明输入有误
+    if (inSingleQuote || inDoubleQuote) {
+        // 可以选择抛出异常或返回错误，但这里简单地返回已解析的部分
+        // 或者可以记录警告
+    }
+
     return result;
 }

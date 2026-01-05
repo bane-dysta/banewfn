@@ -183,15 +183,24 @@ public:
         
         std::stringstream cmd;
         cmd << configManager.getConfig().multiwfnExec << " " << wfnFile << " < " << cmdFileName;
-        
+
         if (!options.screen) {
             cmd << " >> " << outFile;
         }
-        
+
         if (cores > 0) {
-            cmd << " -np " << cores;
+            cmd << " -nt " << cores;
         }
-        
+
+        if (options.nogui) {
+            cmd << " -silent";
+        }
+
+        // Add extra arguments to Multiwfn
+        for (const auto& arg : options.extargs) {
+            cmd << " " << arg;
+        }
+
         std::cout << "Executing command: " << cmd.str() << std::endl;
         std::cout << "Starting Multiwfn process..." << std::endl;
         
@@ -289,11 +298,20 @@ public:
         
         cmd << "cat) | " << configManager.getConfig().multiwfnExec << " " << wfnFile;
 #endif
-        
+
         if (cores > 0) {
-            cmd << " -np " << cores;
+            cmd << " -nt " << cores;
         }
-        
+
+        if (options.nogui) {
+            cmd << " -silent";
+        }
+
+        // Add extra arguments to Multiwfn
+        for (const auto& arg : options.extargs) {
+            cmd << " " << arg;
+        }
+
         std::cout << "Executing command: " << cmd.str() << std::endl;
         std::cout << "Starting Multiwfn in interactive mode...\n" << std::endl;
         
@@ -695,7 +713,9 @@ void printUsage(const char* progName) {
     std::cout << "\nOptions:\n";
     std::cout << "  -c, --cores <num>   Specify the number of CPU cores to use\n";
     std::cout << "  -d, --dryrun        Generate command files only, don't execute (skip wait tasks)\n";
+    std::cout << "  -e, --extargs <args> Pass extra arguments to Multiwfn (use quotes for multiple args)\n";
     std::cout << "  -s, --screen        Display output on screen instead of redirecting to files\n";
+    std::cout << "  -n, --nogui         Run Multiwfn in silent mode\n";
     std::cout << "  -w, --wfn <file>    Specify wavefunction file (.fchk/.wfn or other supported file)\n";
     std::cout << "  -v, --var <key=val> Set custom variable for placeholder replacement (can be used multiple times)\n";
     std::cout << "  -h, --help          Show this help message\n";
@@ -707,6 +727,7 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " input.inp molecule.fchk --screen\n";
     std::cout << "  " << progName << " -w molecule.fchk input.inp -d -s -c 8\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -v myvar=value -v other=123\n";
+    std::cout << "  " << progName << " input.inp molecule.fchk -e \"-silent -nt 4\"\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -746,6 +767,19 @@ int main(int argc, char* argv[]) {
             options.dryrun = true;
         } else if (arg == "-s" || arg == "--screen") {
             options.screen = true;
+        } else if (arg == "-n" || arg == "--nogui") {
+            options.nogui = true;
+        } else if (arg == "-e" || arg == "--extargs") {
+            if (i + 1 < argc) {
+                std::string extArgsStr = argv[i + 1];
+                // Parse the extargs string, supporting quotes
+                std::vector<std::string> parsedArgs = Utils::parseCommandLineArgs(extArgsStr);
+                options.extargs.insert(options.extargs.end(), parsedArgs.begin(), parsedArgs.end());
+                i++;
+            } else {
+                std::cerr << "Error: -e/--extargs requires an argument" << std::endl;
+                return 1;
+            }
         } else if (arg == "-w" || arg == "--wfn") {
             if (i + 1 < argc) {
                 wfnParam = argv[i + 1];

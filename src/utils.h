@@ -67,6 +67,13 @@ public:
      * @return 如果是数组语法，返回解析后的字符串向量；否则返回包含单个元素的向量
      */
     static std::vector<std::string> parseBashArray(const std::string& value);
+
+    /**
+     * @brief 解析命令行参数字符串，支持引号保护
+     * @param argsStr 包含多个参数的字符串，如 "-silent -nt 4"
+     * @return 解析后的参数向量
+     */
+    static std::vector<std::string> parseCommandLineArgs(const std::string& argsStr);
 };
 
 #endif // UTILS_H
