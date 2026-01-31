@@ -8,5 +8,6 @@ test
 tmp*.sh
 build
 btask_wfn
-banewfn_prod.rc
+*.rc
 examples
+*.tar.gz

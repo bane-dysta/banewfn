@@ -10,6 +10,9 @@ MINGW_WINDRES = x86_64-w64-mingw32-windres
 # Install settings
 INSTALL_BINDIR ?= /usr/local/bin
 INSTALL_CONFDIR ?= $(HOME)/.bane/wfn
+# Detect Multiwfn executable (fallback to literal "Multiwfn") and default cores
+INSTALL_CORES := $(if $(CORES),$(CORES),32)
+MULTIWFN_EXEC := $(shell which Multiwfn 2>/dev/null || echo Multiwfn)
 
 # Targets
 TARGET_LINUX = build/banewfn
@@ -54,6 +57,7 @@ install: linux
 	chmod +x $(INSTALL_BINDIR)/banewfn
 	mkdir -p $(INSTALL_CONFDIR)
 	cp conf/* $(INSTALL_CONFDIR)/
+	@printf 'Multiwfn_exec=%s\nconfpath=%s\ncores=%s\n' "$(MULTIWFN_EXEC)" "$(INSTALL_CONFDIR)" "$(INSTALL_CORES)" > "$(INSTALL_CONFDIR)/banewfn.rc"
 
 build:
 	mkdir -p build
