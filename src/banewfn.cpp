@@ -6,6 +6,7 @@
 #include <vector>
 #include <set>
 #include <algorithm>
+#include <iomanip>
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
@@ -711,6 +712,7 @@ void printUsage(const char* progName) {
     std::cout << "Usage: " << progName << " <input.inp> <molecule.fchk> [options]\n";
     std::cout << "       " << progName << " -w <molecule.fchk> <input.inp> [options]\n";
     std::cout << "\nOptions:\n";
+    std::cout << "  -l, --list          List available module conf names or show a conf summary\n";
     std::cout << "  -c, --cores <num>   Specify the number of CPU cores to use\n";
     std::cout << "  -d, --dryrun        Generate command files only, don't execute (skip wait tasks)\n";
     std::cout << "  -e, --extargs <args> Pass extra arguments to Multiwfn (use quotes for multiple args)\n";
@@ -755,6 +757,123 @@ int main(int argc, char* argv[]) {
         if (arg == "-h" || arg == "--help") {
             printUsage(argv[0]);
             return 0;
+        } else if (arg == "-l" || arg == "--list") {
+            // List available conf files or show a summary for a specific conf
+            std::string moduleArg;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                moduleArg = argv[i + 1];
+                i++;
+            }
+
+            // Find and load banewfn.rc to get confPath
+            std::string configFile = findConfigFile(argv[0]);
+            if (configFile.empty()) {
+                std::cerr << "Error: Could not find banewfn.rc to determine conf path\n";
+                return 1;
+            }
+            ConfigManager tmpCm;
+            if (!tmpCm.loadBaneWfnConfig(configFile)) {
+                return 1;
+            }
+            std::string confDir = tmpCm.getConfig().confPath;
+
+            if (moduleArg.empty()) {
+                // List all .conf names under confDir
+                std::string pattern = confDir;
+                if (!pattern.empty() && pattern.back() != '/') pattern += "/";
+                pattern += "*.conf";
+                std::vector<std::string> files = Utils::expandWildcard(pattern);
+                if (files.empty()) {
+                    std::cout << "No .conf files found in: " << confDir << std::endl;
+                } else {
+                    std::cout << "Available module configs in " << confDir << ":\n";
+                    for (const auto &f : files) {
+                        std::cout << "  " << getBaseName(f) << std::endl;
+                    }
+                }
+                return 0;
+            } else {
+                // Show a compact summary for the specified conf
+                if (!tmpCm.loadModuleConfig(moduleArg)) {
+                    std::cerr << "Error: Failed to load module config for: " << moduleArg << std::endl;
+                    return 1;
+                }
+                const ModuleConfig &mc = tmpCm.getModuleConfig(moduleArg);
+                std::cout << "[" << moduleArg << ".conf] summary (section -> variables):\n";
+                // Helper to extract variable names from a command string
+                auto extractVarsFromCommand = [](const std::string &cmd, std::set<std::string> &outVars) {
+                    size_t pos = 0;
+                    while (pos < cmd.size()) {
+                        size_t dollar = cmd.find('$', pos);
+                        if (dollar == std::string::npos) break;
+                        size_t next = dollar + 1;
+                        if (next < cmd.size() && cmd[next] == '{') {
+                            size_t braceEnd = cmd.find('}', next + 1);
+                            if (braceEnd != std::string::npos) {
+                                std::string inside = cmd.substr(next + 1, braceEnd - next - 1);
+                                // support ${var:-default} or ${var:default}
+                                size_t sep = inside.find(":-");
+                                if (sep == std::string::npos) sep = inside.find(':');
+                                std::string varName = (sep == std::string::npos) ? inside : inside.substr(0, sep);
+                                if (!varName.empty()) outVars.insert(varName);
+                                pos = braceEnd + 1;
+                                continue;
+                            } else {
+                                pos = next + 1;
+                                continue;
+                            }
+                        } else {
+                            // $var style
+                            size_t j = next;
+                            while (j < cmd.size() && (isalnum((unsigned char)cmd[j]) || cmd[j] == '_')) j++;
+                            if (j > next) {
+                                outVars.insert(cmd.substr(next, j - next));
+                                pos = j;
+                                continue;
+                            } else {
+                                pos = next;
+                            }
+                        }
+                    }
+                };
+
+                // Show defined sections and list variable names discovered from defaults and commands
+                for (const auto &secPair : mc.sections) {
+                    const std::string &sectionName = secPair.first;
+                    const Section &section = secPair.second;
+                    std::set<std::string> vars;
+                    // add defaults keys
+                    for (const auto &d : section.defaults) {
+                        vars.insert(d.first);
+                    }
+                    // scan commands for $ placeholders
+                    for (const auto &cmdLine : section.commands) {
+                        extractVarsFromCommand(cmdLine, vars);
+                    }
+
+                    // Print section and variables aligned in two columns (first column fixed width)
+                    const size_t nameWidth = 12;
+                    if (sectionName.length() >= nameWidth) {
+                        std::cout << "  " << sectionName;
+                        // ensure spacing before vars
+                        std::cout << std::string(4, ' ');
+                    } else {
+                        std::cout << "  " << std::left << std::setw((int)nameWidth) << sectionName << " ";
+                        // reset formatting
+                        std::cout << std::right;
+                    }
+                    if (!vars.empty()) {
+                        size_t shown = 0;
+                        for (const auto &v : vars) {
+                            if (shown++) std::cout << "; ";
+                            std::cout << v;
+                        }
+                    }
+                    std::cout << "\n";
+                }
+                // Do not display quit commands in -l summary
+                return 0;
+            }
         } else if (arg == "-c" || arg == "--cores") {
             if (i + 1 < argc) {
                 cores = std::atoi(argv[i + 1]);
