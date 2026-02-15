@@ -2,6 +2,7 @@
 #include "utils.h"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <cstdlib>
 #include <unistd.h>
 #include <libgen.h>
@@ -157,7 +158,7 @@ std::string getBaseName(const std::string& filepath) {
 }
 
 // Load banewfn.rc configuration file
-bool ConfigManager::loadBaneWfnConfig(const std::string& configFile) {
+bool ConfigManager::loadBaneWfnConfig(const std::string& configFile, bool requireMultiwfnExec) {
     std::ifstream file(expandPath(configFile));
     if (!file.is_open()) {
         std::cerr << "Error: Cannot open config file: " << configFile << std::endl;
@@ -196,7 +197,7 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile) {
     
     file.close();
     
-    if (config.multiwfnExec.empty()) {
+    if (requireMultiwfnExec && config.multiwfnExec.empty()) {
         std::cerr << "Error: Multiwfn_exec not specified in config file" << std::endl;
         return false;
     }
@@ -205,6 +206,80 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile) {
         config.confPath = expandPath("~/.bane/wfn");
     }
     
+    return true;
+}
+
+// Shared parser for module config (from file or inline text)
+bool ConfigManager::parseModuleConfigStream(std::istream& in, const std::string& moduleName, const std::string& origin) {
+    ModuleConfig modConfig;
+    std::string line;
+    std::string currentSection;
+    bool inDefaultBlock = false;
+    bool inQuitSection = false;
+
+    while (std::getline(in, line)) {
+        line = trim(line);
+
+        // 去除行内注释
+        line = Utils::removeInlineComment(line);
+
+        if (line.empty()) continue;
+
+        // Section header [section_name]
+        if (line[0] == '[' && line[line.length()-1] == ']') {
+            currentSection = line.substr(1, line.length() - 2);
+
+            // Special handling for quit section
+            if (currentSection == "quit") {
+                inQuitSection = true;
+                inDefaultBlock = false;
+            } else {
+                modConfig.sections[currentSection] = Section();
+                inQuitSection = false;
+                inDefaultBlock = false;
+            }
+            continue;
+        }
+
+        // Default value block
+        if (line == "-default-") {
+            if (!inQuitSection) {
+                inDefaultBlock = true;
+            }
+            continue;
+        }
+
+        // Handle quit section commands
+        if (inQuitSection) {
+            modConfig.quitCommands.push_back(line);
+            continue;
+        }
+
+        // Handle regular sections
+        if (!currentSection.empty()) {
+            if (inDefaultBlock) {
+                size_t pos = line.find('=');
+                if (pos != std::string::npos) {
+                    std::string key = trim(line.substr(0, pos));
+                    std::string value = trim(line.substr(pos + 1));
+                    if (value.length() >= 2 && value[0] == '"' && value[value.length()-1] == '"') {
+                        value = value.substr(1, value.length() - 2);
+                    }
+                    modConfig.sections[currentSection].defaults[key] = value;
+                }
+            } else {
+                modConfig.sections[currentSection].commands.push_back(line);
+            }
+        }
+    }
+
+    // If no quit section defined, use default value
+    if (modConfig.quitCommands.empty()) {
+        std::cout << "Warning: Module " << moduleName << " does not define [quit] section (" << origin << ")." << std::endl;
+        modConfig.quitCommands.push_back("q");
+    }
+
+    moduleConfigs[moduleName] = modConfig;
     return true;
 }
 
@@ -223,79 +298,21 @@ bool ConfigManager::loadModuleConfig(const std::string& moduleName) {
     }
     
     std::cout << "Loading module configuration: " << confFile << std::endl;
-    
-    ModuleConfig modConfig;
-    std::string line;
-    std::string currentSection;
-    bool inDefaultBlock = false;
-    bool inQuitSection = false;
-    
-    while (std::getline(file, line)) {
-        line = trim(line);
-        
-        // 去除行内注释
-        line = Utils::removeInlineComment(line);
-        
-        if (line.empty()) continue;
-        
-        // Section header [section_name]
-        if (line[0] == '[' && line[line.length()-1] == ']') {
-            currentSection = line.substr(1, line.length() - 2);
-            
-            // Special handling for quit section
-            if (currentSection == "quit") {
-                inQuitSection = true;
-                inDefaultBlock = false;
-            } else {
-                modConfig.sections[currentSection] = Section();
-                inQuitSection = false;
-                inDefaultBlock = false;
-            }
-            continue;
-        }
-        
-        // Default value block
-        if (line == "-default-") {
-            if (!inQuitSection) {
-                inDefaultBlock = true;
-            }
-            continue;
-        }
-        
-        // Handle quit section commands
-        if (inQuitSection) {
-            modConfig.quitCommands.push_back(line);
-            continue;
-        }
-        
-        // Handle regular sections
-        if (!currentSection.empty()) {
-            if (inDefaultBlock) {
-                size_t pos = line.find('=');
-                if (pos != std::string::npos) {
-                    std::string key = trim(line.substr(0, pos));
-                    std::string value = trim(line.substr(pos + 1));
-                    if (value.length() >= 2 && value[0] == '"' && value[value.length()-1] == '"') {
-                        value = value.substr(1, value.length() - 2);
-                    }
-                    modConfig.sections[currentSection].defaults[key] = value;
-                }
-            } else {
-                modConfig.sections[currentSection].commands.push_back(line);
-            }
-        }
-    }
-    
+
+    bool ok = parseModuleConfigStream(file, moduleName, confFile);
     file.close();
-    
-    // If no quit section defined, use default value
-    if (modConfig.quitCommands.empty()) {
-        std::cout << "Warning: Module " << moduleName << " does not define [quit] section." << std::endl;
-        modConfig.quitCommands.push_back("q");
+    return ok;
+}
+
+bool ConfigManager::loadModuleConfigFromText(const std::string& moduleName, const std::string& confText, const std::string& origin) {
+    // If already loaded, return directly
+    if (moduleConfigs.find(moduleName) != moduleConfigs.end()) {
+        return true;
     }
-    
-    moduleConfigs[moduleName] = modConfig;
-    return true;
+
+    std::istringstream iss(confText);
+    std::cout << "Loading module configuration for " << moduleName << " from " << origin << std::endl;
+    return parseModuleConfigStream(iss, moduleName, origin);
 }
 
 // Get module configuration

@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <istream>
 
 // Platform detection
 #ifdef _WIN32
@@ -46,13 +47,19 @@ class ConfigManager {
 private:
     std::map<std::string, ModuleConfig> moduleConfigs;
     BaneWfnConfig config;
+
+    // Parse module configuration from a stream (shared by file-based and inline-based loaders)
+    bool parseModuleConfigStream(std::istream& in, const std::string& moduleName, const std::string& origin);
     
 public:
     // Load banewfn.rc configuration file
-    bool loadBaneWfnConfig(const std::string& configFile);
+    bool loadBaneWfnConfig(const std::string& configFile, bool requireMultiwfnExec = true);
     
     // Load module-specific conf file
     bool loadModuleConfig(const std::string& moduleName);
+
+    // Load module-specific conf from inlined text
+    bool loadModuleConfigFromText(const std::string& moduleName, const std::string& confText, const std::string& origin = "inline");
     
     // Get configuration values
     const BaneWfnConfig& getConfig() const { return config; }

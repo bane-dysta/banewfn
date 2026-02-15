@@ -1,53 +1,60 @@
-# banewfn CMakeLists.txt
 cmake_minimum_required(VERSION 3.10)
-project(banewfn)
+project(banewfn LANGUAGES CXX)
 
-# 设置C++标准
+# C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 编译选项
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+# Warnings
+add_compile_options(-Wall -Wextra)
 
-# 静态编译选项
+# Static build option
 option(BUILD_STATIC "Build with static linking" ON)
 if(BUILD_STATIC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
 endif()
 
-# 源文件
-set(SOURCES
-    src/banewfn.cpp
+# Core sources shared by tools
+set(CORE_SOURCES
     src/config.cpp
     src/input.cpp
-    src/ui.cpp
     src/utils.cpp
+    src/inline_conf.cpp
 )
 
-# 头文件
-set(HEADERS
+set(CORE_HEADERS
     src/config.h
     src/input.h
-    src/ui.h
     src/utils.h
+    src/inline_conf.h
 )
 
-# 创建可执行文件
-add_executable(banewfn ${SOURCES} ${HEADERS})
+add_library(banewfn_core OBJECT ${CORE_SOURCES} ${CORE_HEADERS})
 
-# 设置输出目录
-set_target_properties(banewfn PROPERTIES
+# banewfn (main runner)
+add_executable(banewfn
+    $<TARGET_OBJECTS:banewfn_core>
+    src/banewfn.cpp
+    src/ui.cpp
+    src/ui.h
+)
+
+# bwpack (bundler)
+add_executable(bwpack
+    $<TARGET_OBJECTS:banewfn_core>
+    src/bwpack.cpp
+)
+
+# Output directory
+set_target_properties(banewfn bwpack PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 
-# 安装目标
-install(TARGETS banewfn
+# Install
+install(TARGETS banewfn bwpack
     RUNTIME DESTINATION bin
-    COMPONENT banewfn
 )
 
-# 显示构建信息
 message(STATUS "banewfn: Building with C++${CMAKE_CXX_STANDARD}")
 if(BUILD_STATIC)
     message(STATUS "banewfn: Static linking enabled")

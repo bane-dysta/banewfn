@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include "config.h"
 #include "input.h"
+#include "inline_conf.h"
 #include "ui.h"
 #include "utils.h"
 
@@ -636,11 +637,32 @@ public:
         if (options.screen) {
             std::cout << "\n** SCREEN MODE: Output to screen instead of files **\n" << std::endl;
         }
+
+        // Try to load embedded inline conf blocks (if any)
+        std::map<std::string, std::string> inlineConfs = InlineConf::extractInlineConfs(inpFile);
+        if (!inlineConfs.empty()) {
+            std::cout << "\nDetected inline conf blocks for modules: ";
+            for (const auto& kv : inlineConfs) {
+                if (!kv.first.empty()) {
+                    std::cout << kv.first << " ";
+                }
+            }
+            std::cout << "\n";
+        }
         
         for (const auto& mod : modules) {
-            if (!loadModuleConfig(mod)) {
-                std::cerr << "Error: Failed to load module config for " << mod << std::endl;
-                return false;
+            auto it = inlineConfs.find(mod);
+            if (it != inlineConfs.end() && !it->second.empty()) {
+                // Inline conf has higher priority
+                if (!configManager.loadModuleConfigFromText(mod, it->second, inpFile + " (inline)")) {
+                    std::cerr << "Error: Failed to load inline module config for " << mod << std::endl;
+                    return false;
+                }
+            } else {
+                if (!loadModuleConfig(mod)) {
+                    std::cerr << "Error: Failed to load module config for " << mod << std::endl;
+                    return false;
+                }
             }
         }
         

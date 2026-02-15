@@ -11,3 +11,7 @@ btask_wfn
 *.rc
 examples
 *.tar.gz
+*.tgz
+*.iss
+scripts/*
+tar
