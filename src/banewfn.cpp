@@ -590,6 +590,36 @@ public:
                 allCustomVars[var.first] = var.second;
             }
         }
+
+        // Interactive variables: allow defining "var=?" at the top of input file
+        // (or via -v/--var var=?) to request the value from user at runtime.
+        //
+        // Notes:
+        // - Only scalar "?" triggers prompting (matching the requested "var=?" syntax).
+        // - User can input a single value or a bash-array like: (a b c)
+        //   to turn this variable into an array for iteration.
+        auto promptInteractiveVars = [](std::map<std::string, std::vector<std::string>>& vars) {
+            for (auto& kv : vars) {
+                const std::string& key = kv.first;
+                std::vector<std::string>& values = kv.second;
+
+                if (values.size() == 1 && Utils::trim(values[0]) == "?") {
+                    std::string prompt = "Bane need value for variable '" + key +
+                                         "' (supports bash array like (a b c), empty for blank): ";
+                    std::string userInput = UI::getUserInput(prompt);
+                    userInput = Utils::trim(userInput);
+
+                    // Allow user to provide bash array syntax interactively.
+                    values = Utils::parseBashArray(userInput);
+
+                    // For single value, also trim surrounding quotes.
+                    if (values.size() == 1) {
+                        values[0] = Utils::trimQuotes(values[0]);
+                    }
+                }
+            }
+        };
+        promptInteractiveVars(allCustomVars);
         
         // Check if any variable is an array (has more than one element)
         // Find the array variable with maximum size to determine iteration count
