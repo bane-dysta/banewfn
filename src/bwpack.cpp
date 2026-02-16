@@ -7,6 +7,7 @@
 #include "input.h"
 #include "inline_conf.h"
 #include "utils.h"
+#include "ui.h"
 
 static void printUsage(const char* prog) {
     std::cout << "Usage: " << prog << " <input.bw> [options]\n\n"
@@ -38,13 +39,27 @@ static std::string replaceExtension(const std::string& path, const std::string& 
     return p.substr(0, dot) + newExt;
 }
 
+static std::string requestBwFile() {
+    std::string bwFile;
+    
+    while (true) {
+        std::cout << "Bane need a bw file: ";
+        std::getline(std::cin, bwFile);
+        
+        // Remove quotes and trim whitespace
+        std::string cleanedFile = Utils::trimQuotes(bwFile);
+        cleanedFile = Utils::trim(cleanedFile);
+        
+        if (Utils::fileExists(cleanedFile)) {
+            return cleanedFile;
+        } else {
+            std::cout << "Bane is useless, cannot access file '" << cleanedFile << "' TAT\n";
+        }
+    }
+}
+
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        printUsage(argv[0]);
-        return 1;
-    }
-
     std::string inputFile;
     std::string outputFile;
     std::string confDir;
@@ -91,10 +106,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // If no input file provided, request it interactively
     if (inputFile.empty()) {
-        std::cerr << "Error: No input file provided\n";
-        return 1;
+        inputFile = requestBwFile();
     }
+    
     if (!Utils::fileExists(inputFile)) {
         std::cerr << "Error: Input file does not exist: " << inputFile << "\n";
         return 1;
