@@ -737,10 +737,30 @@ public:
                 // 为当前文件和数组索引创建任务副本并应用占位符替换
                 std::vector<ModuleTask> fileTasks = tasks;
                 InputParser::applyPlaceholderReplacement(fileTasks, finalWfnFile, currentVars);
-                
-                // Execute each module task in sequence
+
+                // Execute each module task in sequence, allowing wfn_rebase directives
+                // to switch the file provided to subsequent Multiwfn invocations.
+                std::string currentWfnFile = finalWfnFile;
                 for (const auto& task : fileTasks) {
-                    if (!executeModuleTask(task, finalWfnFile, finalCores, options)) {
+                    if (task.isWfnRebase) {
+                        std::string target = Utils::trim(task.wfnRebaseFile);
+                        if (target.empty()) {
+                            // Empty rebase target means reset to the original wfn of this iteration.
+                            currentWfnFile = finalWfnFile;
+                            std::cout << "\n>>> wfn_rebase: reset Multiwfn input to original: " << currentWfnFile << std::endl;
+                        } else {
+                            currentWfnFile = target;
+                            std::cout << "\n>>> wfn_rebase: switch Multiwfn input to: " << currentWfnFile << std::endl;
+                        }
+
+                        // Warn if file does not exist (still continue; Multiwfn will report errors).
+                        if (!options.dryrun && !Utils::fileExists(currentWfnFile)) {
+                            std::cerr << "Warning: wfn_rebase target file not found: " << currentWfnFile << std::endl;
+                        }
+                        continue;
+                    }
+
+                    if (!executeModuleTask(task, currentWfnFile, finalCores, options)) {
                         allSuccess = false;
                     }
                 }

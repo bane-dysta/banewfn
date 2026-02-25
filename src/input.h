@@ -11,8 +11,16 @@ struct ModuleTask {
     std::vector<std::pair<std::string, std::map<std::string, std::string>>> postProcessSteps;
     std::vector<std::string> commands;  // Commands from %command block
     bool useWait;  // Whether to use wait mode (interactive mode)
-    std::string wfnFile;  // Wavefunction file path (optional, from input file header)
+    std::string wfnFile;  // Reserved: optional per-task wavefunction file (currently unused)
     int blockIndex;  // Unique index for blocks with same module name
+
+    // Special directive: wfn_rebase=xxx
+    // If isWfnRebase is true, this task will NOT invoke Multiwfn.
+    // Instead, it updates the current file provided to subsequent Multiwfn tasks.
+    bool isWfnRebase;
+    std::string wfnRebaseFile;
+
+    ModuleTask() : useWait(false), blockIndex(0), isWfnRebase(false) {}
 };
 
 // Execution options

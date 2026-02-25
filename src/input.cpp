@@ -61,6 +61,11 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
             replacement = customIt->second[0];
             found = true;
         }
+        // Priority 2: Check if the variable name is "wfn" (full wavefunction file path)
+        else if (varName == "wfn") {
+            replacement = wfnFile;
+            found = true;
+        }
         // Priority 2: Check if the variable name is "input"
         else if (varName == "input") {
             replacement = wfnBaseName;
@@ -95,6 +100,11 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
 // Apply placeholder replacement to all tasks using wavefunction filename and custom variables
 void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, const std::string& wfnFile, const std::map<std::string, std::vector<std::string>>& customVars) {
     for (auto& task : tasks) {
+        // Apply replacement to wfn_rebase directive target file
+        if (task.isWfnRebase) {
+            task.wfnRebaseFile = replaceInputPlaceholders(task.wfnRebaseFile, wfnFile, customVars);
+        }
+
         // Apply replacement to parameter values
         for (auto& param : task.params) {
             param.second = replaceInputPlaceholders(param.second, wfnFile, customVars);
@@ -202,6 +212,17 @@ std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std:
             cores = std::atoi(coreStr.c_str());
             continue;
         }
+
+        // Special directive: wfn_rebase=xxx
+        // It can appear between blocks to switch the file provided to subsequent Multiwfn tasks.
+        // Only recognized when not inside any module/%process/%command.
+        if (trimmed.find("wfn_rebase=") == 0 && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode) {
+            ModuleTask rebaseTask;
+            rebaseTask.isWfnRebase = true;
+            rebaseTask.wfnRebaseFile = Utils::trim(trimmed.substr(std::string("wfn_rebase=").size()));
+            tasks.push_back(rebaseTask);
+            continue;
+        }
         
         // Check for key=value format at the beginning of file (custom variables)
         // This should come before module definitions, so check if no module is active
@@ -226,7 +247,7 @@ std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std:
                 }
                 
                 // Only accept if key is valid and not a special keyword
-                if (validKey && !key.empty() && key != "wfn" && key != "core") {
+                if (validKey && !key.empty() && key != "wfn" && key != "core" && key != "wfn_rebase") {
                     // Parse value as bash array (supports both array and single value)
                     customVars[key] = Utils::parseBashArray(value);
                     continue;
