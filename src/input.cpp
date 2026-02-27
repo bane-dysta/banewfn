@@ -53,26 +53,36 @@ std::string InputParser::replaceInputPlaceholders(const std::string& text, const
         
         std::string replacement;
         bool found = false;
+
+        // NOTE: ${output} is a reserved placeholder that will be replaced at
+        // execution time with the current block's Multiwfn output file.
+        // We MUST NOT resolve it here (including from customVars or file-based
+        // ${name} substitution), otherwise it cannot reflect wfn_rebase/screen/wait.
+        if (varName == "output") {
+            found = false;
+        }
         
         // Priority 1: Check custom variables from command line or file header
-        auto customIt = customVars.find(varName);
-        if (customIt != customVars.end() && !customIt->second.empty()) {
-            // For array variables, use the first element
-            replacement = customIt->second[0];
-            found = true;
+        if (varName != "output") {
+            auto customIt = customVars.find(varName);
+            if (customIt != customVars.end() && !customIt->second.empty()) {
+                // For array variables, use the first element
+                replacement = customIt->second[0];
+                found = true;
+            }
         }
         // Priority 2: Check if the variable name is "wfn" (full wavefunction file path)
-        else if (varName == "wfn") {
+        if (!found && varName == "wfn") {
             replacement = wfnFile;
             found = true;
         }
         // Priority 2: Check if the variable name is "input"
-        else if (varName == "input") {
+        else if (!found && varName == "input") {
             replacement = wfnBaseName;
             found = true;
         }
-        // Priority 3: For ${name} (braced) and name != input, attempt file-based replacement
-        else if (usedBraces) {
+        // Priority 3: For ${name} (braced) and name != input/output, attempt file-based replacement
+        else if (!found && usedBraces && varName != "output") {
             // Read file named exactly as varName from current working directory
             if (Utils::fileExists(varName)) {
                 std::ifstream f(varName);

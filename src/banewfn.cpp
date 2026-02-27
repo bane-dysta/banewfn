@@ -32,6 +32,60 @@ std::vector<std::string> split(const std::string& str, char delimiter) {
     return Utils::split(str, delimiter);
 }
 
+// Replace only the specified placeholder variable in a string.
+// Supported forms: $var, ${var}, ${var:-default}
+// Any other placeholders are left untouched.
+static std::string replaceOnePlaceholderVar(const std::string& text,
+                                           const std::string& var,
+                                           const std::string& value) {
+    std::string result = text;
+    size_t pos = 0;
+
+    while ((pos = result.find('$', pos)) != std::string::npos) {
+        size_t endPos = pos + 1;
+        std::string varName;
+        std::string defaultValue;
+
+        if (endPos < result.size() && result[endPos] == '{') {
+            size_t braceStart = endPos + 1;
+            size_t braceEnd = result.find('}', braceStart);
+            if (braceEnd == std::string::npos) {
+                // Malformed placeholder, skip
+                pos = endPos + 1;
+                continue;
+            }
+
+            std::string inside = result.substr(braceStart, braceEnd - braceStart);
+            size_t defaultSep = inside.find(":-");
+            if (defaultSep != std::string::npos) {
+                varName = inside.substr(0, defaultSep);
+                defaultValue = inside.substr(defaultSep + 2);
+            } else {
+                varName = inside;
+            }
+            endPos = braceEnd + 1;
+        } else {
+            while (endPos < result.size() && (isalnum((unsigned char)result[endPos]) || result[endPos] == '_')) {
+                endPos++;
+            }
+            varName = result.substr(pos + 1, endPos - pos - 1);
+        }
+
+        if (varName == var) {
+            std::string repl = value;
+            if (repl.empty() && !defaultValue.empty()) {
+                repl = defaultValue;
+            }
+            result.replace(pos, endPos - pos, repl);
+            pos += repl.size();
+        } else {
+            pos = endPos;
+        }
+    }
+
+    return result;
+}
+
 class MultiwfnScriptGenerator {
 private:
     ConfigManager configManager;
@@ -331,17 +385,36 @@ public:
     }
     
     // Execute command block (shell commands)
-    bool executeCommandBlock(const ModuleTask& task, const ExecutionOptions& options) {
+    bool executeCommandBlock(const ModuleTask& task, const std::string& wfnFile, const ExecutionOptions& options) {
         if (task.commands.empty()) {
             return true; // No commands to execute
         }
         
         std::cout << "\nExecuting command block for module: " << task.moduleName << std::endl;
         
-        // In dryrun mode, only show what would be executed
+        // Determine the output file of THIS block (when using file-based redirection)
+        // so that ${output} can be used in %command.
+        std::string outFile;
+        if (!task.moduleName.empty() && !task.useWait && !options.screen) {
+            std::string wfnBaseName = getBaseName(wfnFile);
+            outFile = task.moduleName + "_" + wfnBaseName;
+            if (task.blockIndex > 0) {
+                outFile += "_" + std::to_string(task.blockIndex);
+            }
+            outFile += ".out";
+        }
+
+        // Replace reserved placeholders in command lines (currently: ${output})
+        std::vector<std::string> processedCmds;
+        processedCmds.reserve(task.commands.size());
+        for (const auto& cmdLine : task.commands) {
+            processedCmds.push_back(replaceOnePlaceholderVar(cmdLine, "output", outFile));
+        }
+
+        // In dryrun mode, only show what would be executed (after placeholder replacement)
         if (options.dryrun) {
             std::cout << "Dry-run mode: Would execute the following commands:" << std::endl;
-            for (const auto& cmd : task.commands) {
+            for (const auto& cmd : processedCmds) {
                 std::cout << "  " << cmd << std::endl;
             }
             return true;
@@ -358,8 +431,8 @@ public:
         
         // Check if gitbash_exec is configured and first line is shebang #!/bin/bash
         bool useGitBash = false;
-        if (!configManager.getConfig().gitbashExec.empty() && !task.commands.empty()) {
-            std::string firstLine = task.commands[0];
+        if (!configManager.getConfig().gitbashExec.empty() && !processedCmds.empty()) {
+            std::string firstLine = processedCmds[0];
             // Trim whitespace to check for shebang
             std::string trimmedFirstLine = Utils::trim(firstLine);
             if (trimmedFirstLine == "#!/bin/bash" || trimmedFirstLine.find("#!/bin/bash") == 0) {
@@ -377,7 +450,7 @@ public:
             }
             
             // Write shell commands (including shebang if present)
-            for (const auto& cmd : task.commands) {
+            for (const auto& cmd : processedCmds) {
                 scriptFile << cmd << std::endl;
             }
             scriptFile.close();
@@ -465,7 +538,7 @@ public:
             }
             
             // Write batch commands
-            for (const auto& cmd : task.commands) {
+            for (const auto& cmd : processedCmds) {
                 scriptFile << cmd << std::endl;
             }
             scriptFile.close();
@@ -494,7 +567,7 @@ public:
         // scriptFile << "set -e" << std::endl; // Exit on error is not necessary
         
         // Write shell commands
-        for (const auto& cmd : task.commands) {
+        for (const auto& cmd : processedCmds) {
             scriptFile << cmd << std::endl;
         }
         scriptFile.close();
@@ -529,7 +602,7 @@ public:
         
         // Support command-only task (no module, only %command block)
         if (task.moduleName.empty()) {
-            return executeCommandBlock(task, options);
+            return executeCommandBlock(task, wfnFile, options);
         }
 
         if (task.useWait) {
@@ -540,7 +613,7 @@ public:
         
         // Execute command block if module execution was successful
         if (success) {
-            success = executeCommandBlock(task, options);
+            success = executeCommandBlock(task, wfnFile, options);
         }
         
         return success;
