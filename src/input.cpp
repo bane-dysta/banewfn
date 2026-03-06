@@ -4,6 +4,19 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
+#include <cctype>
+
+namespace {
+
+std::string toLowerAscii(const std::string& text) {
+    std::string result = text;
+    std::transform(result.begin(), result.end(), result.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return result;
+}
+
+} // namespace
 
 // Utility function: split string (deprecated - use Utils::split instead)
 std::vector<std::string> InputParser::split(const std::string& str, char delimiter) {
@@ -135,15 +148,18 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
 }
 
 // Parse inp file, return all module tasks, optional wfn file, core count, and custom variables
-std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std::vector<std::string>>> InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
+std::tuple<std::vector<ModuleTask>, std::string, int,
+           std::map<std::string, std::vector<std::string>>, bool>
+InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
     std::vector<ModuleTask> tasks;
     std::string wfnFile;
     int cores = -1;  // -1 means not specified
     std::map<std::string, std::vector<std::string>> customVars;
+    bool dryrun = false;
     std::ifstream file(inpFile);
     if (!file.is_open()) {
         std::cerr << "Error: Cannot open inp file: " << inpFile << std::endl;
-        return {tasks, wfnFile, cores, customVars};
+        return {tasks, wfnFile, cores, customVars, dryrun};
     }
     
     std::string line;
@@ -223,6 +239,20 @@ std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std:
             continue;
         }
 
+        // Check for dryrun=on/true format at the beginning of file
+        if (trimmed.find("dryrun=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode) {
+            std::string dryrunStr = toLowerAscii(Utils::trim(trimmed.substr(7)));
+            if (dryrunStr == "on" || dryrunStr == "true" || dryrunStr == "yes" || dryrunStr == "1") {
+                dryrun = true;
+            } else if (dryrunStr == "off" || dryrunStr == "false" || dryrunStr == "no" || dryrunStr == "0") {
+                dryrun = false;
+            } else {
+                std::cerr << "Warning: Invalid dryrun value in input header: " << dryrunStr
+                          << " (expected on/true or off/false)" << std::endl;
+            }
+            continue;
+        }
+
         // Special directive: wfn_rebase=xxx
         // It can appear between blocks to switch the file provided to subsequent Multiwfn tasks.
         // Only recognized when not inside any module/%process/%command.
@@ -257,7 +287,8 @@ std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std:
                 }
                 
                 // Only accept if key is valid and not a special keyword
-                if (validKey && !key.empty() && key != "wfn" && key != "core" && key != "wfn_rebase") {
+                if (validKey && !key.empty() && key != "wfn" && key != "core" &&
+                    key != "wfn_rebase" && key != "dryrun") {
                     // Parse value as bash array (supports both array and single value)
                     customVars[key] = Utils::parseBashArray(value);
                     continue;
@@ -334,7 +365,7 @@ std::tuple<std::vector<ModuleTask>, std::string, int, std::map<std::string, std:
     }
     
     file.close();
-    return {tasks, wfnFile, cores, customVars};
+    return {tasks, wfnFile, cores, customVars, dryrun};
 }
 
 // Parse inp file, return all module tasks, optional wfn file, and core count (backward compatibility)

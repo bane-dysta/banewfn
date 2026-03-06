@@ -86,6 +86,39 @@ static std::string replaceOnePlaceholderVar(const std::string& text,
     return result;
 }
 
+static std::string buildMultiwfnInvocation(const std::string& multiwfnExec,
+                                           const std::string& wfnFile,
+                                           int cores,
+                                           const ExecutionOptions& options) {
+    std::stringstream cmd;
+    cmd << multiwfnExec << " " << wfnFile;
+
+    if (cores > 0) {
+        cmd << " -nt " << cores;
+    }
+
+    if (options.nogui) {
+        cmd << " -silent";
+    }
+
+    for (const auto& arg : options.extargs) {
+        cmd << " " << arg;
+    }
+
+    return cmd.str();
+}
+
+static void pauseIfWindowsDryRun(bool shouldPause) {
+#ifdef _WIN32
+    if (shouldPause) {
+        std::cout << std::flush;
+        system("pause");
+    }
+#else
+    (void)shouldPause;
+#endif
+}
+
 class MultiwfnScriptGenerator {
 private:
     ConfigManager configManager;
@@ -238,23 +271,11 @@ public:
         }
         
         std::stringstream cmd;
-        cmd << configManager.getConfig().multiwfnExec << " " << wfnFile << " < " << cmdFileName;
+        cmd << buildMultiwfnInvocation(configManager.getConfig().multiwfnExec, wfnFile, cores, options)
+            << " < " << cmdFileName;
 
         if (!options.screen) {
             cmd << " >> " << outFile;
-        }
-
-        if (cores > 0) {
-            cmd << " -nt " << cores;
-        }
-
-        if (options.nogui) {
-            cmd << " -silent";
-        }
-
-        // Add extra arguments to Multiwfn
-        for (const auto& arg : options.extargs) {
-            cmd << " " << arg;
         }
 
         std::cout << "Executing command: " << cmd.str() << std::endl;
@@ -282,13 +303,7 @@ public:
     bool executeModuleTaskPipe(const ModuleTask& task, const std::string& wfnFile, 
                                int cores, const ExecutionOptions& options) {
         std::cout << "\nProcessing module: " << task.moduleName << " (interactive mode)" << std::endl;
-        
-        // In dryrun mode, skip wait tasks
-        if (options.dryrun) {
-            std::cout << "Dry-run mode: Skipping interactive task." << std::endl;
-            return true;
-        }
-        
+
         // Generate command script without quit commands
         std::string commands = generateModuleScript(task, false);
         if (commands.empty()) {
@@ -302,6 +317,27 @@ public:
         while (std::getline(ss, line)) {
             // Don't trim or skip empty lines - they are meaningful inputs
             cmdLines.push_back(line);
+        }
+
+        std::string multiwfnCmd = buildMultiwfnInvocation(
+            configManager.getConfig().multiwfnExec, wfnFile, cores, options);
+
+        // In dryrun mode, show the manual Multiwfn invocation for wait blocks.
+        if (options.dryrun) {
+            std::cout << "Dry-run mode: wait block will not be executed automatically." << std::endl;
+            std::cout << "Please launch Multiwfn with:" << std::endl;
+            std::cout << "  " << multiwfnCmd << std::endl;
+            if (!cmdLines.empty()) {
+                std::cout << "Then enter the following inputs manually:" << std::endl;
+                for (const auto& cmdLine : cmdLines) {
+                    if (cmdLine.empty()) {
+                        std::cout << "  [empty line]" << std::endl;
+                    } else {
+                        std::cout << "  " << cmdLine << std::endl;
+                    }
+                }
+            }
+            return true;
         }
         
         // Build pipe command: cross-platform compatible
@@ -329,7 +365,7 @@ public:
             }
         }
         
-        cmd << "type con) | " << configManager.getConfig().multiwfnExec << " " << wfnFile << "\"";
+        cmd << "type con) | " << multiwfnCmd << "\"";
 #else
         // Linux style: (echo cmd1; echo cmd2; ...; cat) | Multiwfn file
         cmd << "(";
@@ -352,21 +388,8 @@ public:
             }
         }
         
-        cmd << "cat) | " << configManager.getConfig().multiwfnExec << " " << wfnFile;
+        cmd << "cat) | " << multiwfnCmd;
 #endif
-
-        if (cores > 0) {
-            cmd << " -nt " << cores;
-        }
-
-        if (options.nogui) {
-            cmd << " -silent";
-        }
-
-        // Add extra arguments to Multiwfn
-        for (const auto& arg : options.extargs) {
-            cmd << " " << arg;
-        }
 
         std::cout << "Executing command: " << cmd.str() << std::endl;
         std::cout << "Starting Multiwfn in interactive mode...\n" << std::endl;
@@ -637,6 +660,12 @@ public:
         std::string inputWfnFile = std::get<1>(parseResult);
         int inputCores = std::get<2>(parseResult);
         std::map<std::string, std::vector<std::string>> fileVars = std::get<3>(parseResult);
+        bool inputDryrun = std::get<4>(parseResult);
+
+        ExecutionOptions effectiveOptions = options;
+        if (inputDryrun) {
+            effectiveOptions.dryrun = true;
+        }
         
         // Use wfn file from input file if specified, otherwise use command line argument
         std::string wfnPattern = inputWfnFile.empty() ? wfnFile : inputWfnFile;
@@ -665,7 +694,7 @@ public:
         }
         
         // Merge with command line variables (command line takes precedence)
-        std::map<std::string, std::vector<std::string>> allCustomVars = options.customVars;
+        std::map<std::string, std::vector<std::string>> allCustomVars = effectiveOptions.customVars;
         for (const auto& var : fileVars) {
             // Only add if not already set by command line
             if (allCustomVars.find(var.first) == allCustomVars.end()) {
@@ -743,10 +772,10 @@ public:
         }
         std::cout << "\n";
         
-        if (options.dryrun) {
+        if (effectiveOptions.dryrun) {
             std::cout << "\n** DRY-RUN MODE: Only generating command files **\n" << std::endl;
         }
-        if (options.screen) {
+        if (effectiveOptions.screen) {
             std::cout << "\n** SCREEN MODE: Output to screen instead of files **\n" << std::endl;
         }
 
@@ -836,13 +865,13 @@ public:
                         }
 
                         // Warn if file does not exist (still continue; Multiwfn will report errors).
-                        if (!options.dryrun && !Utils::fileExists(currentWfnFile)) {
+                        if (!effectiveOptions.dryrun && !Utils::fileExists(currentWfnFile)) {
                             std::cerr << "Warning: wfn_rebase target file not found: " << currentWfnFile << std::endl;
                         }
                         continue;
                     }
 
-                    if (!executeModuleTask(task, currentWfnFile, finalCores, options)) {
+                    if (!executeModuleTask(task, currentWfnFile, finalCores, effectiveOptions)) {
                         allSuccess = false;
                     }
                 }
@@ -875,6 +904,8 @@ void printUsage(const char* progName) {
     std::cout << "  -w, --wfn <file>    Specify wavefunction file (.fchk/.wfn or other supported file)\n";
     std::cout << "  -v, --var <key=val> Set custom variable for placeholder replacement (can be used multiple times)\n";
     std::cout << "  -h, --help          Show this help message\n";
+    std::cout << "\nInput header reserved words:\n";
+    std::cout << "  wfn=..., core=..., dryrun=on/true\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << progName << " input.inp molecule.fchk\n";
     std::cout << "  " << progName << " -w molecule.fchk input.inp\n";
@@ -884,6 +915,7 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " -w molecule.fchk input.inp -d -s -c 8\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -v myvar=value -v other=123\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -e \"-silent -nt 4\"\n";
+    std::cout << "  # input.inp header: dryrun=on\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -1113,6 +1145,14 @@ int main(int argc, char* argv[]) {
     std::string inputWfnFile = std::get<1>(parseResult);
     int inputCores = std::get<2>(parseResult);
     std::map<std::string, std::vector<std::string>> inputVars = std::get<3>(parseResult);
+    bool inputDryrun = std::get<4>(parseResult);
+
+    if (inputDryrun) {
+        options.dryrun = true;
+        std::cout << "Dry-run mode enabled by input header." << std::endl;
+    }
+
+    bool shouldPauseOnExit = options.dryrun;
     
     // Merge input file variables with command line variables (command line takes precedence)
     for (const auto& var : inputVars) {
@@ -1147,11 +1187,13 @@ int main(int argc, char* argv[]) {
         std::cerr << "  - Current directory: ./banewfn.rc" << std::endl;
         std::cerr << "  - Executable directory: <exe_dir>/banewfn.rc" << std::endl;
         std::cerr << "  - Home directory: ~/.bane/wfn/banewfn.rc" << std::endl;
+        pauseIfWindowsDryRun(shouldPauseOnExit);
         return 1;
     }
     
     // Load banewfn.rc
     if (!generator.loadBaneWfnConfig(configFile)) {
+        pauseIfWindowsDryRun(shouldPauseOnExit);
         return 1;
     }
     
@@ -1167,8 +1209,10 @@ int main(int argc, char* argv[]) {
     
     // Execute all module tasks
     if (!generator.executeAllTasks(inpFile, wfnFile, cores, options)) {
+        pauseIfWindowsDryRun(shouldPauseOnExit);
         return 1;
     }
-    
+
+    pauseIfWindowsDryRun(shouldPauseOnExit);
     return 0;
 }
