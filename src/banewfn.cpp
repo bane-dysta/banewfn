@@ -385,24 +385,17 @@ public:
     }
     
     // Execute command block (shell commands)
-    bool executeCommandBlock(const ModuleTask& task, const std::string& wfnFile, const ExecutionOptions& options) {
+    // outFile: the Multiwfn output file produced by the preceding module task.
+    //          Computed centrally in executeModuleTask and passed in explicitly
+    //          so that ${output} is always resolved correctly.
+    bool executeCommandBlock(const ModuleTask& task, const std::string& wfnFile,
+                             const ExecutionOptions& options,
+                             const std::string& outFile = "") {
         if (task.commands.empty()) {
             return true; // No commands to execute
         }
         
         std::cout << "\nExecuting command block for module: " << task.moduleName << std::endl;
-        
-        // Determine the output file of THIS block (when using file-based redirection)
-        // so that ${output} can be used in %command.
-        std::string outFile;
-        if (!task.moduleName.empty() && !task.useWait && !options.screen) {
-            std::string wfnBaseName = getBaseName(wfnFile);
-            outFile = task.moduleName + "_" + wfnBaseName;
-            if (task.blockIndex > 0) {
-                outFile += "_" + std::to_string(task.blockIndex);
-            }
-            outFile += ".out";
-        }
 
         // Replace reserved placeholders in command lines (currently: ${output})
         std::vector<std::string> processedCmds;
@@ -501,16 +494,16 @@ public:
             cmdLineBuf.push_back('\0');
             
             BOOL success = CreateProcessA(
-                nullptr,                       // lpApplicationName (null to use command line)
-                cmdLineBuf.data(),            // lpCommandLine (full command line)
-                nullptr,                       // lpProcessAttributes
-                nullptr,                       // lpThreadAttributes
-                TRUE,                          // bInheritHandles
-                0,                            // dwCreationFlags
-                nullptr,                       // lpEnvironment
-                nullptr,                       // lpCurrentDirectory
-                &si,                          // lpStartupInfo
-                &pi                           // lpProcessInformation
+                nullptr,
+                cmdLineBuf.data(),
+                nullptr,
+                nullptr,
+                TRUE,
+                0,
+                nullptr,
+                nullptr,
+                &si,
+                &pi
             );
             
             if (success) {
@@ -583,7 +576,7 @@ public:
         int result = system(cmd.str().c_str());
         
         // Clean up shell script
-        remove(scriptFileName.c_str());  // Comment out this line for debugging
+        remove(scriptFileName.c_str());
 #endif
         
         if (result == 0) {
@@ -599,10 +592,26 @@ public:
     bool executeModuleTask(const ModuleTask& task, const std::string& wfnFile, 
                           int cores, const ExecutionOptions& options) {
         bool success = false;
-        
+
         // Support command-only task (no module, only %command block)
         if (task.moduleName.empty()) {
-            return executeCommandBlock(task, wfnFile, options);
+            return executeCommandBlock(task, wfnFile, options, /*outFile=*/"");
+        }
+
+        // Compute outFile centrally so that ${output} in %command blocks is
+        // always resolved to the same path that executeModuleTaskFile writes.
+        // Rules mirror executeModuleTaskFile exactly:
+        //   - screen mode  → no output file, outFile = ""
+        //   - wait mode    → no output file, outFile = ""
+        //   - otherwise    → "<module>_<wfnBase>[_<blockIndex>].out"
+        std::string outFile;
+        if (!options.screen && !task.useWait) {
+            std::string wfnBaseName = getBaseName(wfnFile);
+            outFile = task.moduleName + "_" + wfnBaseName;
+            if (task.blockIndex > 0) {
+                outFile += "_" + std::to_string(task.blockIndex);
+            }
+            outFile += ".out";
         }
 
         if (task.useWait) {
@@ -613,7 +622,7 @@ public:
         
         // Execute command block if module execution was successful
         if (success) {
-            success = executeCommandBlock(task, wfnFile, options);
+            success = executeCommandBlock(task, wfnFile, options, outFile);
         }
         
         return success;

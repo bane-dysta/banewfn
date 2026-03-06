@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <cctype>
 #ifdef _WIN32
 #include <windows.h>
 #include <direct.h>
@@ -38,12 +39,22 @@ std::vector<std::string> Utils::split(const std::string& str, char delimiter) {
     std::vector<std::string> tokens;
     std::stringstream ss(str);
     std::string token;
+
+    // For whitespace splitting, collapse consecutive whitespace and naturally
+    // support spaces / tabs mixed together. This makes input parsing tolerant of
+    // accidental extra spaces typed by hand.
+    if (std::isspace(static_cast<unsigned char>(delimiter))) {
+        while (ss >> token) {
+            tokens.push_back(token);
+        }
+        return tokens;
+    }
+
     while (std::getline(ss, token, delimiter)) {
         tokens.push_back(trim(token));
     }
     return tokens;
 }
-
 bool Utils::fileExists(const std::string& filepath) {
     std::ifstream file(filepath);
     return file.good();
