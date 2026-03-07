@@ -12,6 +12,6 @@ btask_wfn
 examples
 *.tar.gz
 *.tgz
-*.iss
 scripts/*
 tar
+*.exe
