@@ -7,6 +7,10 @@ MINGW_CXX = x86_64-w64-mingw32-g++
 MINGW_CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -static-libgcc -static-libstdc++
 MINGW_WINDRES = x86_64-w64-mingw32-windres
 
+# Build directories
+BUILD_DIR = build
+BUILD_WINDOWS_DIR = build_windows
+
 # Install settings
 INSTALL_BINDIR ?= /usr/local/bin
 INSTALL_CONFDIR ?= $(HOME)/.bane/wfn
@@ -15,10 +19,10 @@ INSTALL_CORES := $(if $(CORES),$(CORES),32)
 MULTIWFN_EXEC := $(shell which Multiwfn 2>/dev/null || echo Multiwfn)
 
 # Targets
-TARGET_LINUX_BANE   = build/banewfn
-TARGET_LINUX_PACK   = build/bwpack
-TARGET_WINDOWS_BANE = build/banewfn.exe
-TARGET_WINDOWS_PACK = build/bwpack.exe
+TARGET_LINUX_BANE   = $(BUILD_DIR)/banewfn
+TARGET_LINUX_PACK   = $(BUILD_DIR)/bwpack
+TARGET_WINDOWS_BANE = $(BUILD_WINDOWS_DIR)/banewfn.exe
+TARGET_WINDOWS_PACK = $(BUILD_WINDOWS_DIR)/bwpack.exe
 
 # Sources (shared + per-binary)
 COMMON_SOURCES = src/config.cpp src/input.cpp src/utils.cpp src/inline_conf.cpp
@@ -26,14 +30,14 @@ BANE_SOURCES   = src/banewfn.cpp src/ui.cpp
 PACK_SOURCES   = src/bwpack.cpp
 
 # Objects (Linux)
-OBJECTS_LINUX_COMMON = $(patsubst src/%.cpp,build/%.o,$(COMMON_SOURCES))
-OBJECTS_LINUX_BANE   = $(patsubst src/%.cpp,build/%.o,$(BANE_SOURCES)) $(OBJECTS_LINUX_COMMON)
-OBJECTS_LINUX_PACK   = $(patsubst src/%.cpp,build/%.o,$(PACK_SOURCES)) $(OBJECTS_LINUX_COMMON)
+OBJECTS_LINUX_COMMON = $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(COMMON_SOURCES))
+OBJECTS_LINUX_BANE   = $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(BANE_SOURCES)) $(OBJECTS_LINUX_COMMON)
+OBJECTS_LINUX_PACK   = $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(PACK_SOURCES)) $(OBJECTS_LINUX_COMMON)
 
 # Objects (Windows)
-OBJECTS_WINDOWS_COMMON = $(patsubst src/%.cpp,build/%_win.o,$(COMMON_SOURCES))
-OBJECTS_WINDOWS_BANE   = $(patsubst src/%.cpp,build/%_win.o,$(BANE_SOURCES)) $(OBJECTS_WINDOWS_COMMON) build/banewfn_win_res.o
-OBJECTS_WINDOWS_PACK   = $(patsubst src/%.cpp,build/%_win.o,$(PACK_SOURCES)) $(OBJECTS_WINDOWS_COMMON)
+OBJECTS_WINDOWS_COMMON = $(patsubst src/%.cpp,$(BUILD_WINDOWS_DIR)/%_win.o,$(COMMON_SOURCES))
+OBJECTS_WINDOWS_BANE   = $(patsubst src/%.cpp,$(BUILD_WINDOWS_DIR)/%_win.o,$(BANE_SOURCES)) $(OBJECTS_WINDOWS_COMMON) $(BUILD_WINDOWS_DIR)/banewfn_win_res.o
+OBJECTS_WINDOWS_PACK   = $(patsubst src/%.cpp,$(BUILD_WINDOWS_DIR)/%_win.o,$(PACK_SOURCES)) $(OBJECTS_WINDOWS_COMMON)
 
 # Default target (Linux)
 all: linux
@@ -41,34 +45,34 @@ all: linux
 # Linux build
 linux: $(TARGET_LINUX_BANE) $(TARGET_LINUX_PACK)
 
-$(TARGET_LINUX_BANE): $(OBJECTS_LINUX_BANE) | build
+$(TARGET_LINUX_BANE): $(OBJECTS_LINUX_BANE) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -o $(TARGET_LINUX_BANE) $(OBJECTS_LINUX_BANE)
 
-$(TARGET_LINUX_PACK): $(OBJECTS_LINUX_PACK) | build
+$(TARGET_LINUX_PACK): $(OBJECTS_LINUX_PACK) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -o $(TARGET_LINUX_PACK) $(OBJECTS_LINUX_PACK)
 
-build/%.o: src/%.cpp | build
+$(BUILD_DIR)/%.o: src/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Windows cross-compilation
 windows: $(TARGET_WINDOWS_BANE) $(TARGET_WINDOWS_PACK)
 
-$(TARGET_WINDOWS_BANE): $(OBJECTS_WINDOWS_BANE) | build
+$(TARGET_WINDOWS_BANE): $(OBJECTS_WINDOWS_BANE) | $(BUILD_WINDOWS_DIR)
 	$(MINGW_CXX) $(MINGW_CXXFLAGS) -o $(TARGET_WINDOWS_BANE) $(OBJECTS_WINDOWS_BANE)
 
-$(TARGET_WINDOWS_PACK): $(OBJECTS_WINDOWS_PACK) | build
+$(TARGET_WINDOWS_PACK): $(OBJECTS_WINDOWS_PACK) | $(BUILD_WINDOWS_DIR)
 	$(MINGW_CXX) $(MINGW_CXXFLAGS) -o $(TARGET_WINDOWS_PACK) $(OBJECTS_WINDOWS_PACK)
 
-build/%_win.o: src/%.cpp | build
+$(BUILD_WINDOWS_DIR)/%_win.o: src/%.cpp | $(BUILD_WINDOWS_DIR)
 	$(MINGW_CXX) $(MINGW_CXXFLAGS) -c $< -o $@
 
 # Windows资源文件编译 (banewfn only)
-build/banewfn_win_res.o: src/banewfn.rc | build
+$(BUILD_WINDOWS_DIR)/banewfn_win_res.o: src/banewfn.rc | $(BUILD_WINDOWS_DIR)
 	$(MINGW_WINDRES) -O coff -i $< -o $@ -I src
 
 # Build both platforms
 both: linux windows
-	cp conf/banewfn.rc build/
+	cp conf/banewfn.rc $(BUILD_WINDOWS_DIR)/
 
 # Install (Linux executables + config files)
 install: linux
@@ -81,10 +85,13 @@ install: linux
 	cp conf/* $(INSTALL_CONFDIR)/
 	@printf 'Multiwfn_exec=%s\nconfpath=%s\ncores=%s\n' "$(MULTIWFN_EXEC)" "$(INSTALL_CONFDIR)" "$(INSTALL_CORES)" > "$(INSTALL_CONFDIR)/banewfn.rc"
 
-build:
-	mkdir -p build
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(BUILD_WINDOWS_DIR):
+	mkdir -p $(BUILD_WINDOWS_DIR)
 
 clean:
-	rm -rf build/*
+	rm -rf $(BUILD_DIR)/* $(BUILD_WINDOWS_DIR)/*
 
 .PHONY: all linux windows both clean install
