@@ -2,12 +2,12 @@
 #include <windows.h>
 
 // 应用程序图标
-IDI_ICON1 ICON "source/mothwfn.ico"
+IDI_ICON1 ICON "resource/mothwfn.ico"
 
 // 版本信息
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION     1,0,0,0
-PRODUCTVERSION  1,0,0,0
+FILEVERSION     1,1,0,0
+PRODUCTVERSION  1,1,0,0
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 FILEFLAGS       0x0L
 FILEOS           VOS__WINDOWS32
