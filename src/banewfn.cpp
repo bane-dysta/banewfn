@@ -661,10 +661,14 @@ public:
         int inputCores = std::get<2>(parseResult);
         std::map<std::string, std::vector<std::string>> fileVars = std::get<3>(parseResult);
         bool inputDryrun = std::get<4>(parseResult);
+        bool inputNogui = std::get<5>(parseResult);
 
         ExecutionOptions effectiveOptions = options;
         if (inputDryrun) {
             effectiveOptions.dryrun = true;
+        }
+        if (inputNogui) {
+            effectiveOptions.nogui = true;
         }
         
         // Use wfn file from input file if specified, otherwise use command line argument
@@ -905,7 +909,7 @@ void printUsage(const char* progName) {
     std::cout << "  -v, --var <key=val> Set custom variable for placeholder replacement (can be used multiple times)\n";
     std::cout << "  -h, --help          Show this help message\n";
     std::cout << "\nInput header reserved words:\n";
-    std::cout << "  wfn=..., core=..., dryrun=on/true\n";
+    std::cout << "  wfn=..., core=..., dryrun=on/true, nogui=on/true\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << progName << " input.inp molecule.fchk\n";
     std::cout << "  " << progName << " -w molecule.fchk input.inp\n";
@@ -915,7 +919,7 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " -w molecule.fchk input.inp -d -s -c 8\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -v myvar=value -v other=123\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -e \"-silent -nt 4\"\n";
-    std::cout << "  # input.inp header: dryrun=on\n";
+    std::cout << "  # input.inp header: dryrun=on, nogui=on\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -1146,10 +1150,15 @@ int main(int argc, char* argv[]) {
     int inputCores = std::get<2>(parseResult);
     std::map<std::string, std::vector<std::string>> inputVars = std::get<3>(parseResult);
     bool inputDryrun = std::get<4>(parseResult);
+    bool inputNogui = std::get<5>(parseResult);
 
     if (inputDryrun) {
         options.dryrun = true;
         std::cout << "Dry-run mode enabled by input header." << std::endl;
+    }
+    if (inputNogui) {
+        options.nogui = true;
+        std::cout << "No-GUI mode enabled by input header." << std::endl;
     }
 
     bool shouldPauseOnExit = options.dryrun;

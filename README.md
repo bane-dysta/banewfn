@@ -26,6 +26,9 @@ wfn=molecule.fchk
 # 文件头可选：指定CPU核心数
 core=4
 
+# 文件头可选：关闭 Multiwfn UI（等价于命令行 -n）
+nogui=true
+
 # 文件头可选：自定义变量（可在命令中通过 ${变量名} 引用）
 myvar=value
 othervar=123
@@ -102,6 +105,7 @@ wait  # wait结尾时，执行完预定序列后将等待用户继续操作
 # 批量计算空穴-电子分析
 wfn=*.fchk
 core=8
+nogui=true
 [hole-ele]
 state 1
 %process
@@ -257,6 +261,7 @@ banewfn -w <molecule.fchk> <input.inp> [选项]
 - `-c, --cores <num>`: 指定使用的CPU核心数
 - `-d, --dryrun`: 仅生成命令文件，不执行（跳过交互式任务）
 - `-s, --screen`: 输出到屏幕而不是重定向到文件
+- `-n, --nogui`: 以 silent 模式运行 Multiwfn
 - `-w, --wfn <file>`: 指定波函数文件（支持通配符模式）
 - `-v, --var <key=val>`: 设置自定义变量，可在配置文件中通过 `${key}` 引用
 - `-h, --help`: 显示帮助信息
@@ -436,6 +441,7 @@ banewfn input.inp test.fchk -v prefix=final -v version=2.0
 ### 文件模式（默认）
 - 生成临时命令文件（如 `模块名_文件名.txt`）
 - 通过重定向执行 Multiwfn（`Multiwfn file < commands.txt`）
+- 当启用 `-n/--nogui` 或文件头 `nogui=true` 时，会为 Multiwfn 追加 `-silent`
 - 输出重定向到文件（如 `模块名_文件名.out`）或屏幕（使用 `-s` 选项）
 - 执行完成后自动清理临时命令文件
 - 适合批量处理和非交互式分析
@@ -639,7 +645,7 @@ end
 - `%process` 和 `%command` 关键字大小写敏感
 - `end` 或 `wait` 用于结束模块块
 - 支持独立的 `%command` 块（不需要模块定义）
-- 支持在文件头部定义 `wfn=`, `core=`, 和自定义变量
+- 支持在文件头部定义 `wfn=`, `core=`, `dryrun=`, `nogui=`, 和自定义变量
 
 ## 故障排除
 

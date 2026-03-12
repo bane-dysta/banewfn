@@ -16,6 +16,24 @@ std::string toLowerAscii(const std::string& text) {
     return result;
 }
 
+bool tryParseInputBoolFlag(const std::string& rawValue, const std::string& flagName, bool& outValue) {
+    std::string value = toLowerAscii(Utils::trim(rawValue));
+
+    if (value == "on" || value == "true" || value == "yes" || value == "1") {
+        outValue = true;
+        return true;
+    }
+
+    if (value == "off" || value == "false" || value == "flase" || value == "no" || value == "0") {
+        outValue = false;
+        return true;
+    }
+
+    std::cerr << "Warning: Invalid " << flagName << " value in input header: " << value
+              << " (expected on/true or off/false)" << std::endl;
+    return false;
+}
+
 } // namespace
 
 // Utility function: split string (deprecated - use Utils::split instead)
@@ -147,19 +165,20 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
     }
 }
 
-// Parse inp file, return all module tasks, optional wfn file, core count, and custom variables
+// Parse inp file, return all module tasks, optional wfn file, core count, custom variables, and header execution flags
 std::tuple<std::vector<ModuleTask>, std::string, int,
-           std::map<std::string, std::vector<std::string>>, bool>
+           std::map<std::string, std::vector<std::string>>, bool, bool>
 InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
     std::vector<ModuleTask> tasks;
     std::string wfnFile;
     int cores = -1;  // -1 means not specified
     std::map<std::string, std::vector<std::string>> customVars;
     bool dryrun = false;
+    bool nogui = false;
     std::ifstream file(inpFile);
     if (!file.is_open()) {
         std::cerr << "Error: Cannot open inp file: " << inpFile << std::endl;
-        return {tasks, wfnFile, cores, customVars, dryrun};
+        return {tasks, wfnFile, cores, customVars, dryrun, nogui};
     }
     
     std::string line;
@@ -241,15 +260,13 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
 
         // Check for dryrun=on/true format at the beginning of file
         if (trimmed.find("dryrun=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode) {
-            std::string dryrunStr = toLowerAscii(Utils::trim(trimmed.substr(7)));
-            if (dryrunStr == "on" || dryrunStr == "true" || dryrunStr == "yes" || dryrunStr == "1") {
-                dryrun = true;
-            } else if (dryrunStr == "off" || dryrunStr == "false" || dryrunStr == "no" || dryrunStr == "0") {
-                dryrun = false;
-            } else {
-                std::cerr << "Warning: Invalid dryrun value in input header: " << dryrunStr
-                          << " (expected on/true or off/false)" << std::endl;
-            }
+            tryParseInputBoolFlag(trimmed.substr(7), "dryrun", dryrun);
+            continue;
+        }
+
+        // Check for nogui=on/true format at the beginning of file
+        if (trimmed.find("nogui=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode) {
+            tryParseInputBoolFlag(trimmed.substr(6), "nogui", nogui);
             continue;
         }
 
@@ -288,7 +305,7 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
                 
                 // Only accept if key is valid and not a special keyword
                 if (validKey && !key.empty() && key != "wfn" && key != "core" &&
-                    key != "wfn_rebase" && key != "dryrun") {
+                    key != "wfn_rebase" && key != "dryrun" && key != "nogui") {
                     // Parse value as bash array (supports both array and single value)
                     customVars[key] = Utils::parseBashArray(value);
                     continue;
@@ -365,7 +382,7 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
     }
     
     file.close();
-    return {tasks, wfnFile, cores, customVars, dryrun};
+    return {tasks, wfnFile, cores, customVars, dryrun, nogui};
 }
 
 // Parse inp file, return all module tasks, optional wfn file, and core count (backward compatibility)
