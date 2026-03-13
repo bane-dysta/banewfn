@@ -31,7 +31,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=.
 OutputBaseFilename=banewfn_setup
-SetupIconFile=..\src\source\mothwfn.ico
+SetupIconFile=..\src\resource\mothwfn.ico
 SolidCompression=yes
 WizardStyle=classic
 
@@ -45,8 +45,8 @@ Name: "assoc_bw";  Description: "Associate .bw (Banewfn Script) with Banewfn";  
 Name: "assoc_bwc"; Description: "Associate .bwc (Banewfn Script with conf) with Banewfn";  GroupDescription: "File associations"; Flags: checkedonce
 
 [Files]
-Source: "..\build\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\build\bwpack.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\build_windows\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\build_windows\bwpack.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\conf\*.conf"; DestDir: "{app}\conf"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs
 
