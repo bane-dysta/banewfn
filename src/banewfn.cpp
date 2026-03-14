@@ -119,6 +119,56 @@ static void pauseIfWindowsDryRun(bool shouldPause) {
 #endif
 }
 
+static bool taskHasMultiwfnScript(const ModuleTask& task) {
+    return !task.moduleName.empty() || !task.rawCommands.empty();
+}
+
+static std::string getTaskDisplayName(const ModuleTask& task) {
+    if (!task.moduleName.empty()) {
+        return task.moduleName;
+    }
+    if (!task.rawCommands.empty()) {
+        return "%raw";
+    }
+    if (!task.commands.empty()) {
+        return "%command";
+    }
+    return "<empty>";
+}
+
+static std::string getMultiwfnFileStem(const ModuleTask& task, const std::string& wfnFile) {
+    std::string stem = task.moduleName.empty() ? "raw" : task.moduleName;
+
+    std::string wfnBaseName = getBaseName(wfnFile);
+    if (!wfnBaseName.empty()) {
+        stem += "_" + wfnBaseName;
+    }
+
+    if (task.blockIndex > 0) {
+        stem += "_" + std::to_string(task.blockIndex);
+    }
+
+    return stem;
+}
+
+static std::string getCommandScriptStem(const ModuleTask& task) {
+    std::string stem;
+
+    if (!task.moduleName.empty()) {
+        stem = task.moduleName + "_commands";
+    } else if (!task.rawCommands.empty()) {
+        stem = "raw_commands";
+    } else {
+        stem = "commands";
+    }
+
+    if (task.blockIndex > 0) {
+        stem += "_" + std::to_string(task.blockIndex);
+    }
+
+    return stem;
+}
+
 class MultiwfnScriptGenerator {
 private:
     ConfigManager configManager;
@@ -186,34 +236,54 @@ public:
         return InputParser::parseInpFileWithWfnAndCores(inpFile);
     }
     
-    // Generate command script for a single module
+    // Generate Multiwfn input script for a single task.
+    // For normal module tasks, this includes [main] + %process sections + optional %raw.
+    // For raw-only tasks, this is simply the literal %raw content.
     std::string generateModuleScript(const ModuleTask& task, bool includeQuit) {
         std::stringstream output;
-        
-        if (!configManager.hasModuleConfig(task.moduleName)) {
-            std::cerr << "Error: Module config not loaded for " << task.moduleName << std::endl;
-            return "";
-        }
-        
-        const ModuleConfig& modConfig = configManager.getModuleConfig(task.moduleName);
-        
-        // Generate main module commands (pre-processing)
-        auto commands = generateCommands(task.moduleName, "main", task.params);
-        for (const auto& cmd : commands) {
-            output << cmd << "\n";
-        }
-        
-        // Generate post-processing commands
-        for (const auto& step : task.postProcessSteps) {
-            auto stepCommands = generateCommands(task.moduleName, step.first, step.second);
-            for (const auto& cmd : stepCommands) {
+
+        bool hasContent = false;
+        const ModuleConfig* modConfig = nullptr;
+
+        if (!task.moduleName.empty()) {
+            if (!configManager.hasModuleConfig(task.moduleName)) {
+                std::cerr << "Error: Module config not loaded for " << task.moduleName << std::endl;
+                return "";
+            }
+
+            modConfig = &configManager.getModuleConfig(task.moduleName);
+
+            // Generate main module commands (pre-processing)
+            auto commands = generateCommands(task.moduleName, "main", task.params);
+            for (const auto& cmd : commands) {
                 output << cmd << "\n";
+                hasContent = true;
+            }
+
+            // Generate post-processing commands
+            for (const auto& step : task.postProcessSteps) {
+                auto stepCommands = generateCommands(task.moduleName, step.first, step.second);
+                for (const auto& cmd : stepCommands) {
+                    output << cmd << "\n";
+                    hasContent = true;
+                }
             }
         }
-        
-        // Add quit commands only if requested
-        if (includeQuit) {
-            for (const auto& quitCmd : modConfig.quitCommands) {
+
+        // Append literal raw Multiwfn commands after generated module commands.
+        for (const auto& rawCmd : task.rawCommands) {
+            output << rawCmd << "\n";
+            hasContent = true;
+        }
+
+        if (!hasContent) {
+            return "";
+        }
+
+        // Add module-specific quit commands only if requested.
+        // Raw-only tasks are treated as already-finalized literal command sequences.
+        if (includeQuit && modConfig != nullptr) {
+            for (const auto& quitCmd : modConfig->quitCommands) {
                 output << quitCmd << "\n";
             }
         }
@@ -224,7 +294,7 @@ public:
     // Execute single module Multiwfn task (file-based mode)
     bool executeModuleTaskFile(const ModuleTask& task, const std::string& wfnFile, 
                                int cores, const ExecutionOptions& options) {
-        std::cout << "\n>>> Processing module: " << task.moduleName << std::endl;
+        std::cout << "\n>>> Processing Multiwfn task: " << getTaskDisplayName(task) << std::endl;
         
         // Generate command script with quit commands
         std::string commands = generateModuleScript(task, true);
@@ -233,12 +303,7 @@ public:
         }
         
         // Create command file
-        std::string wfnBaseName = getBaseName(wfnFile);
-        std::string cmdFileName = task.moduleName + "_" + wfnBaseName;
-        if (task.blockIndex > 0) {
-            cmdFileName += "_" + std::to_string(task.blockIndex);
-        }
-        cmdFileName += ".txt";
+        std::string cmdFileName = getMultiwfnFileStem(task, wfnFile) + ".txt";
         
         std::ofstream cmdFile(cmdFileName);
         if (!cmdFile.is_open()) {
@@ -257,11 +322,7 @@ public:
         // Generate output filename or screen output
         std::string outFile;
         if (!options.screen) {
-            outFile = task.moduleName + "_" + wfnBaseName;
-            if (task.blockIndex > 0) {
-                outFile += "_" + std::to_string(task.blockIndex);
-            }
-            outFile += ".out";
+            outFile = getMultiwfnFileStem(task, wfnFile) + ".out";
             
             std::ofstream outFileStream(outFile);
             if (outFileStream.is_open()) {
@@ -302,7 +363,8 @@ public:
     // Execute single module Multiwfn task (pipe/interactive mode)
     bool executeModuleTaskPipe(const ModuleTask& task, const std::string& wfnFile, 
                                int cores, const ExecutionOptions& options) {
-        std::cout << "\nProcessing module: " << task.moduleName << " (interactive mode)" << std::endl;
+        std::cout << "\nProcessing Multiwfn task: " << getTaskDisplayName(task)
+                  << " (interactive mode)" << std::endl;
 
         // Generate command script without quit commands
         std::string commands = generateModuleScript(task, false);
@@ -418,7 +480,9 @@ public:
             return true; // No commands to execute
         }
         
-        std::cout << "\nExecuting command block for module: " << task.moduleName << std::endl;
+        (void)wfnFile;
+
+        std::cout << "\nExecuting command block for task: " << getTaskDisplayName(task) << std::endl;
 
         // Replace reserved placeholders in command lines (currently: ${output})
         std::vector<std::string> processedCmds;
@@ -437,10 +501,7 @@ public:
         }
         
         // Create temporary script file
-        std::string scriptFileName = task.moduleName + "_commands";
-        if (task.blockIndex > 0) {
-            scriptFileName += "_" + std::to_string(task.blockIndex);
-        }
+        std::string scriptFileName = getCommandScriptStem(task);
         
 #ifdef PLATFORM_WINDOWS
         int result = 0;
@@ -616,8 +677,8 @@ public:
                           int cores, const ExecutionOptions& options) {
         bool success = false;
 
-        // Support command-only task (no module, only %command block)
-        if (task.moduleName.empty()) {
+        // Support command-only task (no Multiwfn task, only %command block)
+        if (!taskHasMultiwfnScript(task)) {
             return executeCommandBlock(task, wfnFile, options, /*outFile=*/"");
         }
 
@@ -626,15 +687,10 @@ public:
         // Rules mirror executeModuleTaskFile exactly:
         //   - screen mode  → no output file, outFile = ""
         //   - wait mode    → no output file, outFile = ""
-        //   - otherwise    → "<module>_<wfnBase>[_<blockIndex>].out"
+        //   - otherwise    → "<task>_<wfnBase>[_<blockIndex>].out"
         std::string outFile;
         if (!options.screen && !task.useWait) {
-            std::string wfnBaseName = getBaseName(wfnFile);
-            outFile = task.moduleName + "_" + wfnBaseName;
-            if (task.blockIndex > 0) {
-                outFile += "_" + std::to_string(task.blockIndex);
-            }
-            outFile += ".out";
+            outFile = getMultiwfnFileStem(task, wfnFile) + ".out";
         }
 
         if (task.useWait) {
@@ -909,7 +965,10 @@ void printUsage(const char* progName) {
     std::cout << "  -v, --var <key=val> Set custom variable for placeholder replacement (can be used multiple times)\n";
     std::cout << "  -h, --help          Show this help message\n";
     std::cout << "\nInput header reserved words:\n";
-    std::cout << "  wfn=..., core=..., dryrun=on/true, nogui=on/true\n";
+    std::cout << "  wfn=..., core=..., dryrun=on/true, nogui=on/true, wfn_rebase=...\n";
+    std::cout << "\nInput block hints:\n";
+    std::cout << "  %command ... end    Run shell/batch post-commands\n";
+    std::cout << "  %raw ... end/wait   Send literal Multiwfn commands\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << progName << " input.inp molecule.fchk\n";
     std::cout << "  " << progName << " -w molecule.fchk input.inp\n";
