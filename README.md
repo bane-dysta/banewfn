@@ -551,6 +551,14 @@ cmake -S . -B build
 cmake --build build
 ```
 
+### 运行单元测试
+
+```bash
+cmake -S . -B build -DBANEWFN_BUILD_TESTS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
 默认会生成两个可执行文件：
 
 - `banewfn`：主程序

@@ -31,6 +31,8 @@ set(CORE_HEADERS
 
 add_library(banewfn_core OBJECT ${CORE_SOURCES} ${CORE_HEADERS})
 
+option(BANEWFN_BUILD_TESTS "Build unit tests" OFF)
+
 # banewfn (main runner)
 add_executable(banewfn
     $<TARGET_OBJECTS:banewfn_core>
@@ -49,6 +51,11 @@ add_executable(bwpack
 set_target_properties(banewfn bwpack PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
+
+if(BANEWFN_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 # Install
 install(TARGETS banewfn bwpack
