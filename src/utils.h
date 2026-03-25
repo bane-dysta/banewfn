@@ -1,6 +1,7 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,14 @@ public:
      * @return 如果是数组语法，返回解析后的字符串向量；否则返回包含单个元素的向量
      */
     static std::vector<std::string> parseBashArray(const std::string& value);
+
+    /**
+     * @brief 将多个数组变量展开为笛卡尔积组合
+     * @param vars 变量映射；长度大于 1 的值向量视为数组变量
+     * @return 每个组合对应一份变量映射，其中数组变量会被收敛为当前组合中的单个值
+     */
+    static std::vector<std::map<std::string, std::vector<std::string>>> expandVariableCombinations(
+        const std::map<std::string, std::vector<std::string>>& vars);
 
     /**
      * @brief 解析命令行参数字符串，支持引号保护

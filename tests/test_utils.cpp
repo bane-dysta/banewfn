@@ -4,6 +4,7 @@
 #include "utils.h"
 
 #include <filesystem>
+#include <map>
 #include <vector>
 
 TEST_SUITE("Utils") {
@@ -42,6 +43,31 @@ TEST_CASE("parseBashArray and parseCommandLineArgs handle simple shell-like synt
         "path with spaces"
     };
     CHECK(Utils::parseCommandLineArgs(R"(--flag "two words" 'three words' path\ with\ spaces)") == argsExpected);
+}
+
+TEST_CASE("expandVariableCombinations builds cartesian products for array variables") {
+    const std::map<std::string, std::vector<std::string>> vars = {
+        {"prefix", {"job"}},
+        {"spin", {"alpha", "beta"}},
+        {"state", {"1", "2", "3"}}
+    };
+
+    const auto combinations = Utils::expandVariableCombinations(vars);
+
+    REQUIRE(combinations.size() == 6);
+
+    CHECK(combinations[0].at("prefix") == std::vector<std::string>{"job"});
+    CHECK(combinations[0].at("spin") == std::vector<std::string>{"alpha"});
+    CHECK(combinations[0].at("state") == std::vector<std::string>{"1"});
+
+    CHECK(combinations[2].at("spin") == std::vector<std::string>{"alpha"});
+    CHECK(combinations[2].at("state") == std::vector<std::string>{"3"});
+
+    CHECK(combinations[3].at("spin") == std::vector<std::string>{"beta"});
+    CHECK(combinations[3].at("state") == std::vector<std::string>{"1"});
+
+    CHECK(combinations[5].at("spin") == std::vector<std::string>{"beta"});
+    CHECK(combinations[5].at("state") == std::vector<std::string>{"3"});
 }
 
 TEST_CASE("expandWildcard returns sorted regular files and handles literal paths") {

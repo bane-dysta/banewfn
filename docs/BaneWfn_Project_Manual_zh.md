@@ -1,154 +1,142 @@
 ```{=latex}
 \begin{titlepage}
 \centering
-\vspace*{2.8cm}
-{\Huge\bfseries BaneWfn 软件说明书\par}
-\vspace{0.9cm}
-{\Large 面向 Multiwfn 的模块化分析工作流脚本与执行系统\par}
+\vspace*{1.2cm}
+\includegraphics[width=0.40\textwidth]{icon.png}\par
+\vspace{0.8cm}
+{\Huge\bfseries BaneWfn: Multiwfn工作流调度程序\par}
+\vspace{0.4cm}
+{\normalsize 模块化、可复用、可批量的分析脚本体系\par}
 \vspace{2.2cm}
 \begin{tabular}{rl}
-产品名称： & BaneWfn \\
-版本： & 1.1 \\
-文档类型： & 软件说明书 \\
-语言： & 中文 \\
+version： & 1.1 \\
 \end{tabular}
 \vfill
-{\large BaneWfn Project\par}
-\vspace*{1.2cm}
+{\large Bane QC Project\par}
+\vspace*{1.1cm}
 \end{titlepage}
 
 \tableofcontents
 \newpage
 ```
 
-# 概述
+本文档默认读者已经了解 Multiwfn 的基本用途，但不假定读者已经接触过 BaneWfn。第一次使用时，建议先阅读“总览”“运行时配置”和“输入文件与 DSL”三章，再结合“示例”动手验证；如果你已经在项目中使用过 BaneWfn，则可以把本手册作为语法、行为和命名规则的系统参考。
 
-## 产品定位
+# 总览
 
-BaneWfn 是面向 Multiwfn 后处理任务的模块化工作流脚本器。程序使用文本输入文件统一描述波函数文件来源、模块步骤、原始 Multiwfn 命令、后处理 shell/batch 命令、变量和批量迭代规则，并依据模块配置文件自动生成 Multiwfn 输入序列后执行。
+## 定位
 
-BaneWfn 以“可复用分析脚本”为核心工作模型。常用分析流程可以抽象为模块与步骤，临时补充操作可以直接写成 `%raw` 原始 Multiwfn 输入或 `%command` 后处理命令，从而在同一份脚本中组合标准化分析、一次性补丁和结果整理逻辑。
+BaneWfn 是一个面向 Multiwfn 的模块化工作流程序。它并不替代 Multiwfn 本身，也不额外实现量子化学分析算法，而是把 Multiwfn 中那些固定、重复、容易出错的操作路径抽象为可复用脚本，从而把“手工菜单操作”转化为“可维护、可共享、可批量执行的工作流”。
+
+在设计上，BaneWfn 以文本脚本为核心：输入文件负责描述任务顺序、变量和批处理逻辑，`.conf` 模块配置负责封装常用菜单路径，`%raw` 与 `%command` 则分别承担原始 Multiwfn 输入和后处理命令。借助这一组合方式，用户既可以沉淀稳定流程，也可以在同一份脚本中插入一次性的临时补丁，而不必为了少量例外单独维护另一套流程。
+
+从使用体验来看，BaneWfn 更像是一层“工作流胶水”。它把 Multiwfn、shell / batch 命令以及项目中的命名规范、归档习惯和批量执行需求连接在一起，适合用于实验室内部复用、项目归档和跨平台共享。
 
 ## 适用场景
 
-BaneWfn 适用于以下场景：
+BaneWfn 特别适合以下几类工作场景：
 
-- 同一套 Multiwfn 分析需要在大量 `fchk`、`wfn`、`log`、`cub` 等输入文件上重复执行。
-- 分析流程由多个固定菜单操作组成，适合沉淀为可复用模块。
-- 工作流中需要穿插 shell/batch 命令，对 Multiwfn 生成的 `cub`、文本、图像或中间文件做重命名、归档和后处理。
-- 一个脚本内需要在多个输入文件之间切换，例如先生成 `mwfn`/`cub` 工件，再以该工件作为后续任务输入。
-- 需要把模块定义直接打包进脚本，形成无需外部 `conf` 目录即可分发的单文件工作流。
+- 当同一套 Multiwfn 分析需要在大量 `fchk`、`wfn`、`log`、`cub` 等输入文件上重复执行时，可以把原本的手工流程整理为统一脚本，从而显著减少重复劳动。
+- 当分析流程由多个固定菜单操作组成，并且这些操作会在不同项目中反复出现时，可以通过模块配置把流程沉淀为可复用步骤。
+- 当工作流中需要穿插 shell / batch 命令，对 Multiwfn 生成的 `cub`、文本、图像或中间文件做重命名、归档和二次处理时，BaneWfn 可以把计算和后处理收拢到同一份脚本中。
+- 当一个分析过程需要在多个输入文件之间反复切换，例如先生成 `cub` 或 `fch` 工件，再以这些工件作为后续任务输入时，BaneWfn 可以把这种“分阶段切换输入”的逻辑写成显式、可追踪的脚本步骤。
+- 当一个分析过程有非常繁琐的前置输入，且后处理未必能一次完成时（典型场景如绘制填色图），BaneWfn 可以执行完预定繁琐冗长的命令后将控制权交还给用户，让用户直接开始后处理。
 
 ## 核心能力
 
-- 使用统一 DSL 描述模块块、步骤块、原始命令块和命令块。
-- 通过 `.conf` 模块配置文件将常用 Multiwfn 菜单路径封装为可复用步骤。
-- 支持 `%raw` 原始命令块，在模块流程之外直接写入最终 Multiwfn 输入序列。
-- 支持 `%command` 后处理块，在 Multiwfn 任务后执行 shell 或 batch 命令。
-- 支持自定义变量、数组变量和交互式变量，并可对多个波函数文件批量展开。
-- 支持 `wfn_rebase=` 在同一脚本中切换后续任务使用的输入文件。
-- 支持 inline conf 与 `bwpack` 打包，便于单文件共享与归档。
-- 支持 Linux 与 Windows；Windows 下可选通过 Git Bash 执行 `#!/bin/bash` 风格命令块。
+BaneWfn 的价值不在于增加新的计算功能，而在于把已有分析能力组织得更稳定、更可复用。具体而言，它提供了以下几项核心能力：
 
-## 核心对象
+- 它使用统一 DSL 描述模块块、步骤块、原始命令块和命令块，使脚本既能表达结构化流程，也能容纳少量例外操作。
+- 它允许通过 `.conf` 模块配置文件把常用 Multiwfn 菜单路径封装为步骤，从而将经验性操作沉淀为可共享模板。
+- 它支持 `%raw` 原始命令块，因此即便某个流程尚未被模块化，也可以直接在脚本中写入原始 Multiwfn 输入序列。
+- 它支持 `%command` 后处理块，可以把重命名、移动文件、调用 Python / VMD / gnuplot 等操作紧接在计算结果之后执行。
+- 它支持自定义变量、数组变量和交互式变量，能够把批量分析、参数扫描和运行时补值纳入同一工作流框架。
+- 它支持 `wfn_rebase=`，因此可以在同一脚本中显式切换后续任务使用的输入文件，而不必拆分成多个独立脚本。
+- 它支持 inline conf 与 `bwpack` 打包，有利于单文件分发、归档和跨机器迁移。
+- 它支持 Linux 与 Windows；在 Windows 下，还可以选择通过 Git Bash 执行 `#!/bin/bash` 风格的 `%command` 块。
 
-| 对象 | 说明 |
-| --- | --- |
-| input file | BaneWfn 主输入文件，常用扩展名为 `.inp`、`.bw` 或 `.bwc`。三者语法等价。 |
-| current wfn file | 当前传递给 Multiwfn 的输入文件；可来自 `wfn=`、命令行 `-w` 或 `wfn_rebase=`。 |
-| module block | 以 `[module]` 声明的任务块；对应一个外部或内嵌的 `<module>.conf` 配置。 |
-| process step | `%process` 中的一行步骤；映射到模块配置里的同名 section。 |
-| raw block | `%raw` 块；直接写入 Multiwfn 原始命令序列。 |
-| command block | `%command` 块；执行 shell 或 batch 后处理命令。 |
-| module config | `<module>.conf` 文件；定义 `[main]`、步骤段、默认参数和 `[quit]` 序列。 |
-| inline conf | 内嵌在 `.bw/.inp/.bwc` 文件末尾的模块配置块；加载优先级高于外部同名 `.conf`。 |
-| wavefunction pattern | 传给程序的波函数文件路径或通配符模式，例如 `*.fchk`。 |
-| array iteration | 由数组变量触发的重复执行机制；程序会对每个数组索引重复整套任务序列。 |
-
-# 系统模型与执行流程
-
-## 推荐目录布局
-
-BaneWfn 不强制固定工程目录。推荐布局如下：
-
-```text
-workspace/
-  input.inp
-  molecule.fchk
-  fragdef.txt
-  note
-  banewfn.rc
-  conf/
-    fmo.conf
-    grid.conf
-```
-
-说明如下：
-
-- `input.inp` 为工作流脚本入口。
-- `molecule.fchk`、`molecule.log`、`density.cub` 等作为 Multiwfn 输入文件。
-- `banewfn.rc` 声明 Multiwfn 可执行文件与模块配置目录。
-- `conf/` 保存模块 `.conf` 文件；也可使用内嵌 inline conf 取代外部目录依赖。
+# 运行流程
 
 ## 标准执行流程
 
-BaneWfn 的标准执行流程如下：
+理解 BaneWfn 的执行顺序，对编写稳定脚本非常重要。总体上，程序会先完成“配置解析”，再完成“任务展开”，最后进入“逐轮执行”。其标准流程如下：
 
-1. 读取 `banewfn.rc`，确定 `Multiwfn_exec`、`confpath` 和默认核心数。
-2. 解析输入文件头部，读取 `wfn=`、`core=`、`dryrun=`、`nogui=`、自定义变量和 `wfn_rebase=` 指令。
-3. 解析任务序列，构造模块块、独立 `%raw` 块与独立 `%command` 块。
-4. 合并命令行变量与文件头变量，必要时对 `var=?` 交互式变量进行运行时提问。
-5. 按当前输入文件检测 inline conf；若存在对应模块，优先加载内嵌配置，否则从 `confpath` 读取外部 `.conf`。
-6. 展开波函数文件通配符，并按“文件循环 × 数组变量循环”的顺序重复执行任务序列。
-7. 对当前循环副本执行输入侧占位符替换，再依据模块配置生成最终 Multiwfn 命令序列。
-8. 按 `end` 或 `wait` 选择文件模式或交互模式调用 Multiwfn。
-9. 若当前块带有 `%command`，在对应 Multiwfn 任务成功后执行后处理命令。
+1. 程序首先查找并读取 `banewfn.rc`，从中确定 `Multiwfn_exec`、`confpath`、默认核心数以及可选的 `gitbash_exec`。
+2. 随后解析输入文件，读取 `wfn`、`core`、`dryrun`、`nogui` 等头部保留项，以及自定义变量和 `wfn_rebase` 指令。
+3. 输入文件中的任务块会被整理为内部任务序列，包括 module 块、独立 `%raw` 块和独立 `%command` 块。
+4. 程序会合并命令行变量与文件中的自定义变量；若存在 `var=?` 形式的交互式变量，则会在运行时提示用户输入。
+5. 对于脚本中实际引用到的模块，程序会先检查输入文件末尾是否包含对应的 inline conf；若存在，则优先加载内嵌配置，否则从 `confpath` 读取外部 `.conf` 文件。
+6. 程序会展开波函数文件通配符，并根据数组变量生成变量组合。由此得到的每一轮执行，都对应一个“输入文件 × 变量组合”的具体实例。
+7. 在每一轮实例中，程序会先做输入文件侧占位符替换，再根据模块配置展开出最终的 Multiwfn 命令序列。
+8. 对于需要调用 Multiwfn 的任务，程序会根据块的收尾方式选择 `end`（非交互模式）或 `wait`（交互模式）执行。
+9. 当某个任务成功结束且带有 `%command` 时，程序会继续执行该任务对应的后处理命令。
+
+换句话说，BaneWfn 的核心思路是：先把脚本“解释清楚”，再把它“展开成一组具体任务”，最后按顺序逐一执行。只要理解了这三层关系，脚本中的变量替换、批处理、命令命名和 `wfn_rebase` 行为就会变得更容易预测。
 
 ## 循环展开规则
 
-当前版本的循环顺序如下：
+批量执行时，最容易混淆的是“文件循环”和“变量循环”的嵌套顺序。当前版本的规则是：**外层先按波函数文件列表循环，内层再按数组变量组合循环**。也就是说，程序会先固定一个输入文件，再在该文件上依次跑完所有变量组合，然后才切换到下一个文件。
 
-1. 外层按波函数文件列表循环。
-2. 内层按数组变量索引循环。
-3. 在每个“文件 × 数组索引”组合上，从头到尾执行整份输入文件中的任务序列。
+当前版本的循环顺序可概括如下：
 
-当波函数模式匹配多个文件时，匹配结果只包含常规文件，并按字母顺序处理。
+1. 先展开 `wfn=` 或 `-w` 指定的文件列表。
+2. 再基于数组变量生成变量组合；如果有多个数组变量，则先求笛卡尔积。
+3. 对于每一个“文件 × 变量组合”，都从头到尾执行整份输入文件中的任务序列。
+
+例如，当前目录下存在 `m1.fchk` 和 `m2.fchk`，输入文件为：
+
+```text
+wfn=*.fchk
+state=(1 2)
+[hole-ele]
+state ${state}
+%process
+cub
+end
+```
+
+那么执行顺序将是：先对 `m1.fchk` 执行 `state=1` 和 `state=2` 两轮，再对 `m2.fchk` 执行 `state=1` 和 `state=2` 两轮。换言之，实际顺序为 `m1/state=1 -> m1/state=2 -> m2/state=1 -> m2/state=2`，而不是先把所有文件跑完 `state=1` 再统一切换到 `state=2`。
 
 # 构建、安装与运行依赖
 
 ## 构建依赖
 
-构建 BaneWfn 需要以下依赖：
+构建 BaneWfn 只需要一个正常的 C++17 编译环境。通常来说，你需要准备以下条件：
 
-- 支持 C++17 的编译器。
-- CMake 3.10 或更高版本，或 GNU Make 构建环境。
+- 支持 C++17 的编译器；
+- CMake 3.10 或更高版本，或者 GNU Make 构建环境；
 - Linux 或 Windows 运行环境。
 
 ## 运行时依赖
 
-BaneWfn 本身不实现量子化学分析算法。程序在运行时需要：
+BaneWfn 本身不实现 Multiwfn 中的分析算法，因此在运行阶段需要依赖外部程序和输入数据。一个可用的运行环境通常至少应满足以下条件：
 
-- 可访问的 Multiwfn 可执行文件。
-- 与工作流匹配的波函数或其他 Multiwfn 支持输入文件。
-- 模块配置目录或输入文件末尾的 inline conf。
-- 当 `%command` 中调用外部程序时，对应 shell、batch、Python、VMD、gnuplot 等外部工具。
+- 系统中可以访问到 Multiwfn 可执行文件；
+- 模块配置可以从 `confpath` 找到，或者已经以内嵌形式打包到输入文件末尾；
+- 如果 `%command` 中调用了额外工具，例如 shell、batch、Python、VMD、gnuplot 等，则这些工具也需要在目标环境中可用。
 
 ## CMake 构建
+
+如果你使用 CMake，推荐的构建方式如下：
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-当前 CMake 工程特性如下：
+当前 CMake 工程具备以下特性：
 
-- 语言标准：C++17。
-- `BUILD_STATIC`：控制静态链接，默认开启。
-- `BANEWFN_BUILD_TESTS`：控制单元测试构建，默认关闭。
-- 默认生成两个可执行文件：`banewfn` 与 `bwpack`。
-- 二进制输出目录：`build/bin/`。
+- 语言标准为 C++17；
+- `BUILD_STATIC` 用于控制静态链接，默认开启；
+- `BANEWFN_BUILD_TESTS` 用于控制单元测试构建，默认关闭；
+- 默认会生成两个可执行文件：`banewfn` 与 `bwpack`；
+- 二进制输出目录为 `build/bin/`。
+
+对于大多数使用者来说，CMake 构建适合做跨平台开发、调试和测试，因为它对构建目录、测试开关和编译选项的组织更清晰。
 
 ## Makefile 构建
+
+如果你更偏好直接使用 Makefile，也可以采用如下命令：
 
 ```bash
 make linux
@@ -156,14 +144,18 @@ make windows
 make both
 ```
 
-Makefile 额外支持：
+当前 Makefile 额外支持以下目标或变量：
 
-- `make install`：安装可执行文件和配置文件。
-- `INSTALL_BINDIR`：安装二进制目录，默认 `/usr/local/bin`。
-- `INSTALL_CONFDIR`：安装配置目录，默认 `~/.bane/wfn`。
+- `make install`：安装可执行文件和配置文件；
+- `INSTALL_BINDIR`：安装二进制目录，默认 `/usr/local/bin`；
+- `INSTALL_CONFDIR`：安装配置目录，默认 `~/.bane/wfn`；
 - `CORES`：安装时写入 `banewfn.rc` 的默认核心数。
 
+如果你的使用场景以本机部署为主，Makefile 通常足够直接；如果需要更细粒度地控制构建选项或集成 CI，CMake 会更合适。
+
 ## 测试构建
+
+当你需要运行单元测试时，可以使用以下命令：
 
 ```bash
 cmake -S . -B build -DBANEWFN_BUILD_TESTS=ON
@@ -171,56 +163,34 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-## 安装结果
+在一个完整的安装流程中，通常会得到以下几类产物：
 
-当前安装流程会生成：
-
-- 主程序：`banewfn`
-- 打包工具：`bwpack`
-- 配置目录中的模块配置文件：`*.conf`
-- 基本 `banewfn.rc`，其中写入 `Multiwfn_exec`、`confpath` 和默认 `cores`
+- 主程序 `banewfn`；
+- 打包工具 `bwpack`；
+- 配置目录中的示例模块配置文件 `*.conf`；
+- 默认的 `banewfn.rc` 配置文件。
 
 # 运行时配置
 
-## `banewfn.rc` 查找顺序
-
-`banewfn.rc` 按以下顺序查找：
-
-1. 当前目录：`./banewfn.rc`
-2. 可执行文件所在目录：`<exe_dir>/banewfn.rc`
-3. 用户目录：`~/.bane/wfn/banewfn.rc`
-
-当主程序找不到该文件时会终止运行。`bwpack` 在未显式指定 `--confdir` 时也会尝试使用同一查找顺序；若仍未找到配置，则回退到 `~/.bane/wfn` 作为默认配置目录。
-
 ## 推荐配置目录布局
+
+为了降低项目维护成本，建议把运行配置和模块配置集中放在同一目录中。一个典型布局如下：
 
 ```text
 ~/.bane/wfn/
   banewfn.rc
   aromatic.conf
   bond_order.conf
-  cdft.conf
-  charge.conf
-  cp2k.conf
-  dos.conf
-  excit.conf
-  fmo.conf
-  grid.conf
-  hole-ele.conf
-  modwfn.conf
-  nbo.conf
-  no.conf
-  of2.conf
-  plane.conf
-  plane_fromcub.conf
-  spectrum.conf
-  surface.conf
-  weak.conf
+  ...
 ```
 
-## `banewfn.rc` 字段
+这种布局的优点在于：主程序配置和模块配置位于同一层级，查找规则清晰，跨项目复用时也更容易复制和备份。如果你所在团队已经形成了统一的 `.conf` 库，那么把它们集中到 `confpath` 指向的目录里，会比散落在各个项目目录中更便于维护。
 
-示例：
+## `banewfn.rc`
+
+### 主要结构
+
+尽管文件扩展名是 `rc`，但 `banewfn.rc` 的实际格式更接近简单的 `key=value` 配置文件。它主要负责告诉程序“Multiwfn 在哪里”“模块配置目录在哪里”“默认并行数是多少”，以及在 Windows 下是否需要通过 Git Bash 执行 bash 风格命令块。一个最小可用示例如下：
 
 ```ini
 Multiwfn_exec=Multiwfn
@@ -230,37 +200,51 @@ cores=8
 # gitbash_exec="C:\Program Files\Git\bin\bash.exe"
 ```
 
-字段说明如下：
+各字段含义如下：
 
-| 字段 | 是否必需 | 说明 |
-| --- | --- | --- |
-| `Multiwfn_exec` | `banewfn` 必需 | Multiwfn 可执行文件路径或命令名。支持 `~`、`$HOME`、`${HOME}` 展开。 |
-| `confpath` | 可选 | 模块 `.conf` 所在目录。未设置时默认 `~/.bane/wfn`。 |
-| `cores` | 可选 | 默认核心数。命令行 `-c` 和输入头 `core=` 可覆盖。 |
-| `gitbash_exec` | Windows 可选 | 当 `%command` 首行为 `#!/bin/bash` 时，用于通过 Git Bash 执行命令块。非 Windows 平台忽略。 |
+- `Multiwfn_exec`：必需。用于指定 Multiwfn 可执行文件路径或命令名，并支持 `~`、`$HOME`、`${HOME}` 等主目录写法。
+- `confpath`：可选。用于指定模块 `.conf` 所在目录；未设置时默认使用 `~/.bane/wfn`。
+- `cores`：可选。用于指定默认核心数；命令行 `-c` 和输入头 `core=` 都可以覆盖它。
+- `gitbash_exec`：可选。仅在 Windows 下使用；当 `%command` 首行为 `#!/bin/bash` 时，程序会通过这里指定的 Git Bash 去执行命令块。
 
-## 注释与路径规则
+从职责划分看，`banewfn.rc` 更像是“运行环境配置”，而不是某个具体工作流的组成部分。也正因为如此，建议把它看作机器级配置，而把项目相关变量放在 `.bw/.inp` 脚本中维护。
 
-`banewfn.rc` 与 `.conf` 使用相同的注释规则：
+### 查找顺序
 
-- 引号外的 `#` 视为注释起始符。
-- 单引号或双引号内部的 `#` 保留为字面字符。
-- 在引号外写 `\#` 可以保留字面 `#`。
+`banewfn.rc` 按以下顺序查找：
+
+1. 当前目录：`./banewfn.rc`
+2. 可执行文件所在目录：`<exe_dir>/banewfn.rc`
+3. 用户目录：`~/.bane/wfn/banewfn.rc`
+
+当主程序找不到该文件时会终止运行。`bwpack` 在未显式指定 `--confdir` 时，也会尝试使用同一查找顺序；若仍未找到配置，则回退到 `~/.bane/wfn` 作为默认配置目录。
+
+如果你想在某个项目中临时覆盖全局配置，只需要把一个项目专用的 `banewfn.rc` 放到当前目录即可，而不必修改用户目录下的通用配置。
+
+### 注释与路径规则
+
+`banewfn.rc` 与 `.conf` 共享同一套注释和路径展开规则：
+
+- 引号外的 `#` 视为注释起始符；
+- 单引号或双引号内部的 `#` 会保留为字面字符；
+- 在引号外写 `\#` 可以保留字面 `#`；
 - `~`、`$HOME` 和 `${HOME}` 会在配置读取时展开为用户主目录。
 
-## 模块配置文件格式
+## 配置文件
 
-模块配置文件为纯文本 `.conf` 文件，当前正式结构如下：
+### 格式
+
+模块配置文件是纯文本 `.conf` 文件，用于定义某个模块如何进入主菜单、如何执行步骤，以及在非交互模式下如何退出。一个较完整的结构如下：
 
 ```ini
 [main]
 命令序列...
 
-[step_name]
+[process_name]
 命令序列...
 
--default-
-param=value
+[process2_name]
+命令序列...
 
 [quit]
 退出命令序列...
@@ -268,97 +252,91 @@ param=value
 
 各段语义如下：
 
-| 段 | 作用 |
-| --- | --- |
-| `[main]` | 进入模块主逻辑时固定追加的 Multiwfn 命令序列。 |
-| `[step_name]` | `%process` 中一步对应的命令序列。 |
-| `-default-` | 当前 section 的默认参数。仅对所在 section 生效。 |
-| `[quit]` | 任务以 `end` 收尾时自动追加的退出序列。 |
+- `[main]`：进入模块主逻辑时固定追加的 Multiwfn 命令序列；
+- `[process_name]`：供 `%process` 中某一步调用的命令序列；
+- `[quit]`：任务以 `end` 收尾时自动追加的退出序列。
 
-当前行为补充如下：
+### 约定与建议
 
-- `%process` 中的步骤名与 `.conf` 的 section 名必须完全匹配，大小写敏感。
-- `-default-` 仅对当前 section 生效，不是全局默认区。
-- 若模块配置缺少 `[quit]`，程序会自动补上一条 `q`。
-- 模块名与文件名一一对应，例如 `[fmo]` 读取 `fmo.conf`。
+为了保持模块之间的可组合性，建议每个 `[step_name]` 在执行结束后都回到 `[main]` 进入的主逻辑界面。这样做的好处是，多个步骤可以在同一模块块中顺序串联，而不需要每做完一步就重新走完整个 Multiwfn 菜单路径。
+
+此外，建议在 `.conf` 中把“稳定、可复用”的菜单路径写成标准 section，把临时补丁保留给 `%raw`。这样既能保证模块配置本身清晰简洁，又不会为了少量特殊情况把通用模板写得过于臃肿。
 
 # 输入文件与 DSL
 
 ## 输入文件类型
 
-主程序对文件扩展名没有语义分支。当前常用约定如下：
+主程序对文件扩展名本身没有语义分支，所有扩展名都使用同一套 DSL 语法。当前常见约定如下：
 
 | 扩展名 | 用途 |
 | --- | --- |
 | `.inp` | 普通工作流输入文件。 |
 | `.bw` | 可复用脚本文件。 |
-| `.bwc` | 已经打包 inline conf 的单文件脚本。 |
+| `.bwc` | 已打包 inline conf 的单文件脚本。 |
 
-三类文件的语法完全相同。
+实际项目中，三者的差别更多体现在交付方式而不是语法本身：`.inp` 多作脚本产生的临时产物，`.bw` 更像可维护的脚本源文件，而 `.bwc` 则适合做归档和单文件分享。
 
-## 语法总览
+## 整体结构
 
-一个输入文件由以下部分组成：
+一份输入文件通常由三部分组成：文件头中的保留项与自定义变量、一个或多个任务块，以及可选的 inline conf 尾块。最推荐的写法，是把“环境与变量”集中写在上方，把“任务流程”集中写在中间，把“内嵌配置”统一放到文件末尾，这样最便于长期维护。
 
-1. 文件头保留项与自定义变量。
-2. 一个或多个模块块、独立 `%raw` 块或独立 `%command` 块。
-3. 可选的 inline conf 尾块。
-
-示例：
+示例如下：
 
 ```ini
-wfn=*.fchk
 core=8
-prefix=result
 state=(1 2 3)
 
-[fmo]
+[excit]
+%process
+    nto state ${state}
+%command
+#!/bin/bash
+mv ex_${state}.fchk ${input}_NTO${state}.fch
+mkdir -p ${input}_NTOs
+mv ${output} ${input}_NTOs
+end
+
+wfn_rebase=${input}_NTO${state}.fch
+
 %process
     orb index h
     orb index l
 %command
-    mv h.cub ${prefix}_${input}_H.cub
-    mv l.cub ${prefix}_${input}_L.cub
+#!/bin/bash
+mkdir -p ${input}_NTOs
+mv ${input}_NTO${state}.fch ${input}_NTOs
+mv ${output} ${input}_NTOs
+mv h.cub ${input}_NTOs/${input}_NTO${state}_oH.cub
+mv l.cub ${input}_NTOs/${input}_NTO${state}_oL.cub
+echo "vmd -e orb.vmd" > ${input}_NTOs/orb.bat
+echo "vcube *.cub" > ${input}_NTOs/orb.vmd
 end
 
-wfn_rebase=${prefix}_${input}_H.cub
-
-%raw
-5
-q
+%command
+cd NTOs
+call orb.bat
 end
 ```
 
-## 词法与注释规则
+## 注释规则
 
-### 模块头必须顶格
+在普通输入上下文中，注释规则与配置文件一致：
 
-模块块以 `[module]` 声明，并且必须从行首开始书写：
+- 引号外的 `#` 及其后内容会被去除；
+- 引号内的 `#` 会保留；
+- `\#` 在引号外会保留为字面 `#`。
 
-```ini
-[fmo]
-```
+但在 `%raw` 与 `%command` 中，情况完全不同。这两个块是**字面块（literal block）**，其内容会按原样保留：
 
-当前版本不会把带前导缩进的 `[fmo]` 识别为模块头。
+- 空行会被保留；
+- 形如 `# comment` 的行也会被保留；
+- `%raw` 中的 `# ...` 会直接送入 Multiwfn，而不会被当作输入文件注释。
 
-### 注释
+因此，若你只是想给脚本加说明，请把注释写在块外；若把注释放进 `%raw`，程序就会把它当作 Multiwfn 输入的一部分。
 
-在普通输入上下文中：
+## 输入文件头
 
-- 引号外的 `#` 及其后内容会被去除。
-- 引号内的 `#` 保留。
-- `\#` 在引号外保留为字面 `#`。
-
-在 `%raw` 与 `%command` 中：
-
-- 行内容按原样保留。
-- 空行会保留。
-- 形如 `# comment` 的行也会作为字面内容写入 `%raw` 或 `%command`。
-- 因此 `%raw` 中的 `# ...` 会被直接送入 Multiwfn，而不是输入文件注释。
-
-## 文件头保留项
-
-当前版本在块外识别以下头部保留项：
+输入文件头通常位于第一个任务块之前，用来声明当前脚本的默认输入、默认并行数以及一些执行开关。当前保留项如下：
 
 ```ini
 wfn=*.fchk
@@ -372,20 +350,19 @@ wfn_rebase=next.fchk
 
 | 写法 | 说明 |
 | --- | --- |
-| `wfn=<path-or-pattern>` | 当前脚本默认波函数文件或通配符模式。 |
+| `wfn=<path-or-pattern>` | 当前脚本默认的波函数文件或通配符模式。 |
 | `core=<N>` | 当前脚本默认核心数。 |
 | `dryrun=<bool>` | 设为真时启用干运行。 |
 | `nogui=<bool>` | 设为真时向 Multiwfn 追加 `-silent`。 |
-| `wfn_rebase=<path>` | 切换后续任务使用的输入文件；只能写在块外。 |
 
-布尔真值与假值规则如下：
+其中，`wfn_rebase=<path>` 比较特殊。它不是单纯的“文件头配置”，而是一个可以出现在块间的流程指令，用于临时切换后续块使用的输入文件。与 `wfn` 不同，`wfn_rebase` 不支持通配符。
+
+布尔值的真值与假值规则如下：
 
 - 真值：`on`、`true`、`yes`、`1`
 - 假值：`off`、`false`、`flase`、`no`、`0`
 
-## 自定义变量
-
-除保留项外，块外的 `key=value` 会被解析为自定义变量：
+除保留项外，块外的其他 `key=value` 会被解析为自定义变量。例如：
 
 ```ini
 prefix=result
@@ -393,44 +370,46 @@ state=(1 2 3)
 answer=?
 ```
 
-规则如下：
+相关规则如下：
 
-- 变量名只能包含字母、数字和下划线。
-- 自定义变量必须写在模块定义之前且位于块外。
-- `wfn`、`core`、`wfn_rebase`、`dryrun`、`nogui` 不是自定义变量名。
-- 变量值不能为空；若需要运行时询问，请使用 `?`。
+- 变量名只能包含字母、数字和下划线；
+- 如前所述，`wfn`、`core`、`wfn_rebase`、`dryrun`、`nogui` 不能作为自定义变量名；
+- 变量值不可留空；若希望运行时询问，请使用 `?`；
+- 从可维护性角度出发，建议把自定义变量集中写在文件头部，而不要零散分布在任务之间。
 
 ### 数组变量
 
-数组变量使用 Bash 风格语法：
+数组变量使用 Bash 风格语法定义，例如：
 
 ```ini
 state=(1 2 3 4)
 ```
 
-行为如下：
+它的行为可以概括为：程序会把同一脚本重复执行多次，每次取数组中的一个元素；如果存在多个数组变量，则先计算这些数组的笛卡尔积，再对每个组合执行整套任务序列。
 
-- 程序会把同一脚本重复执行多次，每次取数组中的一个元素。
-- 若存在多个数组变量，所有数组长度必须一致。
-- 数组元素可带成对引号，解析后会去除元素级外层引号。
+需要注意的是，数组元素可以带成对引号，解析后会去除元素级外层引号。因此，当元素本身不含空格时，通常不必额外加引号；只有在你明确需要保留某些特殊字符或 shell 风格写法时，才需要这样做。
 
 ### 交互式变量
 
-`var=?` 表示运行时询问：
+`var=?` 表示运行时询问用户决定其值。例如：
 
 ```ini
 state=?
 ```
 
-交互输入支持：
+程序会在运行时提示：
 
-- 单个值，例如 `1`
-- Bash 风格数组，例如 `(1 2 3)`
-- 空输入，表示空字符串
+```text
+Bane need value for variable 'state' (supports bash array like (a b c), empty for blank):
+```
 
-## 模块block
+这里的交互输入既支持单值，也支持数组形式。换言之，即使某个变量在脚本编写阶段还无法确定，也仍然可以在运行时以一次输入的方式生成单值或批量组合。
 
-模块block以 `[module]` 开始，可包含参数行、`%process`、`%raw` 与 `%command`：
+## 任务块类型
+
+### 模块块
+
+模块块以 `[module]` 开始，可包含参数行、`%process`、`%raw` 与 `%command`。一个典型例子如下：
 
 ```ini
 [fmo]
@@ -438,38 +417,31 @@ index h
 %process
     orb grid 2
 %raw
-    0
+0
 %command
     mv h.cub ${input}_H.cub
 end
 ```
 
-模块block的处理顺序固定为：
+模块块的处理顺序固定为：
 
-1. `[main]`
-2. `%process` 各步骤
-3. 模块内 `%raw`
-4. `end` 时追加 `[quit]`
-5. Multiwfn 成功后执行 `%command`
+1. 先执行模块配置中的 `[main]`；
+2. 再按 `%process` 中的顺序执行各步骤；
+3. 然后拼接模块内 `%raw`；
+4. 若以 `end` 收尾，则自动追加 `[quit]`；
+5. 最后在 Multiwfn 成功结束后执行 `%command`。
 
-### 参数行
-
-模块参数行写法如下：
+如果 `[main]` 序列中有变量，可以在模块块开头通过 `key value` 的形式指定参数，每行一个，例如：
 
 ```ini
 index h
 ```
 
-规则如下：
+Note: 模块参数和 `%process` 参数使用的是**空格分隔的 `key value` 语法**，而不是 `key=value`。
 
-- 采用空格分隔，而不是 `key=value`。
-- 当前版本仅取该行的前两个 token 作为 `key` 和 `value`。
-- 参数值不支持内含空格。
-- 参数会在加载 `.conf` 之前参与占位符替换。
+### `%process`
 
-## `%process`
-
-`%process` 用于声明模块步骤：
+`%process` 用于声明模块步骤，它依赖于当前已经进入某个模块块。例如：
 
 ```ini
 %process
@@ -477,17 +449,19 @@ index h
     orb_num index 15
 ```
 
-规则如下：
+相关规则如下：
 
-- 每行第一列是步骤名，对应 `.conf` 中的 section 名。
-- 后续参数按“键 值”成对解析。
-- 当前版本不支持参数值中包含空格。
-- 若一行参数数量为奇数，最后一个未成对 token 会被忽略。
-- `%process` 只能用于模块块内部；块外写 `%process` 只会产生警告，不会形成任务。
+- 每行第一个 token 是步骤名，对应 `.conf` 中的 section 名；
+- 后续参数按“键 值”成对解析；
+- 当前版本不支持参数值中包含空格；
+- 若一行参数数量为奇数，最后一个未成对 token 会被忽略；
+- `%process` 只能用于 module 块内部；若在块外书写，只会产生警告，不会形成任务。
 
-## `%raw`
+因此，`%process` 的职责应理解为“调用模块中的一个已定义步骤，并在调用时为它补入参数”，而不是直接写原始 Multiwfn 命令。
 
-`%raw` 表示原始 Multiwfn 输入序列：
+### `%raw`
+
+`%raw` 表示原始 Multiwfn 输入序列。它既可以写在模块内，也可以单独存在。例如：
 
 ```ini
 %raw
@@ -498,17 +472,19 @@ q
 end
 ```
 
-行为如下：
+`%raw` 的核心特点是“程序不解释内容，只负责原样传递”。它的行为如下：
 
-- 独立 `%raw` 块不依赖任何模块配置。
-- 模块内 `%raw` 追加在 `[main]` 与 `%process` 生成内容之后。
-- `%raw` 内的每一行会原样送给 Multiwfn。
-- `%raw` 中的空行、`#` 行和占位符替换后的文本都会保留。
-- 独立 `%raw` 在 `end` 模式下不会自动补 `[quit]`；若需要退出，应在 `%raw` 中自行写完整退出序列。
+- 独立 `%raw` 块不依赖任何模块配置；
+- 独立 `%raw` 在 `end` 模式下不会自动补 `[quit]`，若需要优雅地退出，应在 `%raw` 中自行写完整退出序列。
+- `%raw` 内每一行都会原样送给 Multiwfn；
+- `%raw` 中的空行、`#` 行和占位符替换后的文本都会保留；
+- 若写在模块内， `%raw` 序列会追加在 `[main]` 与 `%process` 生成内容之后；
 
-## `%command`
+从实践角度看，`%raw` 适合处理两类情况：一类是尚未模块化/不值得模块化、但有确定的原始菜单输入；另一类是在模块化流程中临时插入一两步补丁，而不值得为此改动公共 `.conf` 模板的需求。
 
-`%command` 用于执行 shell 或 batch 后处理命令：
+### `%command`
+
+`%command` 用于执行 shell 或 batch 后处理命令，也可以写在模块内或独立存在。例如：
 
 ```ini
 %command
@@ -517,74 +493,82 @@ mv density.cub ${input}_den.cub
 end
 ```
 
-行为如下：
+其行为如下：
 
-- 模块内 `%command` 在对应 Multiwfn 任务成功后执行。
-- 顶层允许写独立 `%command` 块；这类任务不会调用 Multiwfn，只执行命令块本身。
-- `%command` 内容原样保留，空行和注释行也会写入最终脚本。
-- `--dryrun` 下不会执行 `%command`，只打印替换后的最终命令。
+- 模块内 `%command` 会在对应 Multiwfn 任务成功结束后执行；
+- 顶层允许写独立 `%command` 块；这类任务不会调用 Multiwfn，而只执行命令块本身；
+- `%command` 内容按原样保留，空行和注释行也会写入最终脚本；
+- 在 `--dryrun` 下不会实际执行 `%command`，只会打印替换后的最终命令。
 
-## `end` 与 `wait`
+如果你的工作流需要整理输出目录、批量改名、写日志、调用可视化脚本或触发额外分析，那么 `%command` 往往是把“算完之后该做什么”显式写进工作流的最好位置。
 
-每个 `%raw`、模块块或命令块以 `end` 或 `wait` 收尾。
+### `end` 与 `wait`
 
-### `end`
+每个 `%raw`、module 块或命令块都以 `end` 或 `wait` 收尾。两者决定了整个任务按哪种模式执行。
 
-- 模块块：文件模式执行 Multiwfn，并在成功后执行 `%command`。
-- 独立 `%raw`：文件模式执行原始 Multiwfn 序列。
-- 独立 `%command`：结束命令块并执行命令。
+#### `end`
 
-### `wait`
+- 对于 module 块，`end` 表示按非交互模式执行 Multiwfn，并在成功后执行 `%command`；
+- 对于独立 `%raw`，`end` 表示按非交互模式执行原始 Multiwfn 序列；
+- 对于独立 `%command`，`end` 表示命令块结束。
 
-- 模块块：进入交互模式，程序先喂入预设命令，再把 Multiwfn 会话交还给用户。
-- 独立 `%raw`：将 `%raw` 内容作为交互模式的预输入。
-- 独立 `%command`：当前版本不会因此进入 Multiwfn 交互，仅结束当前命令块。
+#### `wait`
 
-## `wfn_rebase=`
+- 对于 module 块，`wait` 表示进入交互模式；程序会先喂入预设命令，再把 Multiwfn 会话交还给用户；
+- 对于独立 `%raw`，`wait` 表示把 `%raw` 内容作为交互模式的预输入；
+- 对于独立 `%command`，`wait` 与 `end` 行为一致。
 
-`wfn_rebase=` 用于在同一脚本中切换后续任务使用的输入文件：
+如果你希望脚本先帮你走完一部分固定菜单，再由你手动接管剩余操作，那么 `wait` 是最自然的选择；如果你希望整段流程完全无人值守地执行，则应使用 `end`。
+
+### `wfn_rebase=`
+
+`wfn_rebase=` 用于在同一脚本中切换后续任务使用的输入文件。例如：
 
 ```ini
 wfn_rebase=hole.cub
 wfn_rebase=
 ```
 
-规则如下：
+它的规则如下：
 
-- 只能写在块外。
-- 非空值表示切换后续任务输入文件。
-- 空值表示恢复到本轮原始输入文件。
-- 该值参与输入侧占位符替换。
+- 只能写在块外；
+- 非空值表示切换后续任务输入文件；
+- 空值表示恢复到本轮原始输入文件；
+- 该值参与输入侧占位符替换；
 - 若目标文件在执行时不存在，程序会给出警告，但仍继续执行，最终由 Multiwfn 或后续命令报告错误。
+
+`wfn_rebase` 常用于需要Multiwfn预处理的任务，如进行激发态波函数分析分两步，第一步是生成激发态自然轨道，第二步需要用生成的激发态自然轨道计算静电势，则 `wfn_rebase` 可以用来在同一个脚本内切换波函数文件，而不必另开一个脚本。
 
 # 占位符与变量替换
 
 ## 总体模型
 
-BaneWfn 存在两套独立占位符系统：
+BaneWfn 中存在两套彼此独立的占位符系统：一套作用于输入文件本身，另一套作用于模块配置模板。理解这一点非常关键，因为很多“为什么变量没替换”或“为什么默认值没生效”的问题，本质上都是把两套系统混在了一起。
 
-1. **输入文件占位符**：作用于模块参数、`%process` 参数、`%raw`、`%command` 与 `wfn_rebase=`。
+具体而言，程序会按以下顺序做替换：
+
+1. **输入文件占位符**：作用于模块参数、`%process` 参数、`%raw`、`%command` 与 `wfn_rebase=`；
 2. **模块配置占位符**：作用于 `.conf` 模板中的命令序列。
 
-两套替换分两阶段进行，先输入文件替换，再模块配置替换。
+也就是说，先把脚本中的“当前实例”替换出来，再把这些替换后的参数交给模块模板去生成最终的 Multiwfn 命令。这个两阶段模型，正是 BaneWfn 能同时支持批量变量、模块默认值和 `${output}` 延迟求值的关键。
 
 ## 输入文件占位符
 
-当前正式支持：
+当前正式支持的输入文件占位符如下：
 
 | 写法 | 含义 |
 | --- | --- |
-| `$input` / `${input}` | 当前 Multiwfn 输入文件的基名，去路径和扩展名。 |
+| `$input` / `${input}` | 当前 Multiwfn 输入文件的基名，去掉路径和扩展名。 |
 | `$wfn` / `${wfn}` | 当前 Multiwfn 输入文件的完整路径。 |
-| `$var` / `${var}` | 自定义变量。 |
-| `${name}` | 若当前工作目录存在名为 `name` 的文件，则读取其内容并去掉首尾空白。 |
 | `${output}` | 保留给 `%command` 在执行前替换为当前块的 `.out` 文件名。 |
 
-说明如下：
+除此之外，其他`$var`和`${var}`均作为自定义变量。若当前工作目录存在名为 `var` 的文件，则读取其内容并去掉首尾空白。
 
-- 输入文件占位符不支持 `${var:-default}` 语法。
-- 若某个普通占位符无法解析，原文本会保留不变。
-- `${output}` 在解析阶段不会被提前替换；它只在 `%command` 真正执行前替换。
+Note：
+
+- 输入文件占位符不支持 `${var:-default}` 语法；
+- 若某个普通占位符无法解析，原文本会保留不变；
+- `${output}` 在解析阶段不会被提前替换，它只会在 `%command` 真正执行前被赋予实际值。
 
 ### 输入文件占位符优先级
 
@@ -595,9 +579,11 @@ BaneWfn 存在两套独立占位符系统：
 3. 特殊变量 `wfn` 与 `input`
 4. `${name}` 形式的同名文件读取
 
+命令行变量最适合用来临时覆盖脚本中的默认值；而 `${name}` 读取文件内容的写法则更适合接入外部流程生成的动态参数，比如拟合的平面向量之类的。
+
 ## 模块配置占位符
 
-`.conf` 模板中支持以下写法：
+`.conf` 模板中支持以下占位符写法：
 
 | 写法 | 含义 |
 | --- | --- |
@@ -607,114 +593,150 @@ BaneWfn 存在两套独立占位符系统：
 
 参数来源优先级如下：
 
-1. 当前输入文件中传给模块或步骤的参数。
-2. 对应 section 下 `-default-` 段定义的默认值。
+1. 当前输入文件中传给模块或步骤的参数；
+2. 以`key=value`形式写在当前 section 的 `-default-` flag下的键值（*legacy*）；
 3. 模板内 `${name:-default}` 写法提供的内联默认值。
+
+这种设计使得 `.conf` 可以保持通用，而具体脚本只需要按需覆盖少数参数。通常建议把“模块作者认为合理的默认值”写进模板内联默认值，把“项目级差异化参数”留给输入文件传入。
 
 ## `${output}` 的取值规则
 
-`${output}` 只在 `%command` 中有正式含义。其行为如下：
+`${output}` 只在 `%command` 中具有正式含义。它代表当前块对应的 Multiwfn 输出文件名，但并不是任何时候都有值。其行为如下：
 
 | 场景 | `${output}` 值 |
 | --- | --- |
-| 文件模式且未使用 `--screen` | 当前 Multiwfn 输出文件名，例如 `fmo_sample.out`。 |
+| 非交互模式且未使用 `--screen` | 当前 Multiwfn 输出文件名，例如 `fmo_sample.out`。 |
 | `wait` 交互模式 | 空字符串。 |
 | `--screen` 模式 | 空字符串。 |
 | 独立 `%command` 块 | 空字符串。 |
 
-## 示例
+之所以如此，是因为 `wait` 和 `--screen` 模式本来就不会生成对应的 `.out` 文件。换句话说，`${output}` 不是一个“永远存在的逻辑文件名”，而是一个与实际执行模式严格绑定的运行时占位符。
 
-```ini
-wfn=sample.fchk
-prefix=result
-state=(1 2)
-
-[excit]
-%process
-    nto state ${state} path ${prefix}_${state}.fchk
-%command
-    echo ${wfn}
-    mv ${prefix}_${state}.fchk ${input}_NTO${state}.fchk
-    echo ${output}
-end
-```
-
-# 执行模式、文件命名与工件
+# 执行行为与文件产物
 
 ## 文件模式
 
-以 `end` 收尾的模块块或独立 `%raw` 块使用文件模式。程序会：
+以 `end` 收尾的 module 块或独立 `%raw` 块，会使用非交互文件模式执行。程序在这一模式下会依次完成以下操作：
 
-1. 生成临时 Multiwfn 命令文件。
-2. 通过重定向方式调用 Multiwfn。
-3. 默认把标准输出追加到 `.out` 文件。
-4. Multiwfn 成功后执行 `%command`。
+1. 生成临时 Multiwfn 命令文件；
+2. 通过重定向方式调用 Multiwfn；
+3. 默认把标准输出追加到 `.out` 文件；
+4. 若 Multiwfn 成功结束，再执行对应的 `%command`。
+
+从自动化角度看，文件模式最适合用于批量处理、无人值守计算和需要保留完整日志的场景，因为它会把中间命令和输出文件命名为可追踪的产物。
 
 ## 交互模式
 
-以 `wait` 收尾的模块块或独立 `%raw` 块使用交互模式。程序会：
+以 `wait` 收尾的 module 块或独立 `%raw` 块，会进入交互模式。在这种模式下，程序会：
 
-1. 通过管道向 Multiwfn 发送预设输入。
-2. 保留会话，让用户继续交互。
-3. 不生成 `.out` 文件。
-4. 若存在 `%command`，在 Multiwfn 成功结束后执行。
+1. 通过管道向 Multiwfn 发送预设输入；
+2. 保留会话，让用户继续手动交互；
+3. 不生成 `.out` 文件；
+4. 若存在 `%command`，则在 Multiwfn 成功结束后再执行。
 
-## `--screen`
-
-`--screen` 仅影响文件模式：
-
-- Multiwfn 输出直接打印到屏幕。
-- 不创建 `.out` 文件。
-- `%command` 中 `${output}` 为空。
-
-## `--dryrun`
-
-干运行模式的当前行为如下：
-
-| 任务类型 | 干运行行为 |
-| --- | --- |
-| 文件模式模块块 | 生成 `.txt` 命令文件，但不执行 Multiwfn。 |
-| `wait` 模式模块块 | 不自动启动 Multiwfn，只打印建议执行命令与应输入的内容。 |
-| 独立 `%raw` 文件模式 | 生成 `raw_*.txt`，不执行。 |
-| `%command` | 不创建脚本，不执行，只打印替换后的最终命令。 |
+交互模式最常用于绘图时需要手动调整，但前置命令极度繁琐，敲错一次白干很久的场景。善用`wait`，可以将繁琐重复的步骤全部省略，直接进入绘图细调阶段。
 
 ## 文件命名规则
 
 ### Multiwfn 命令文件与输出文件
 
+为了方便定位每一轮任务产物，BaneWfn 会为 Multiwfn 命令文件和输出文件生成可预测的名称：
+
 | 任务类型 | 命令文件 | 输出文件 |
 | --- | --- | --- |
-| 模块块 | `<module>_<wfnBase>.txt` | `<module>_<wfnBase>.out` |
+| module 块 | `<module>_<wfnBase>.txt` | `<module>_<wfnBase>.out` |
 | 独立 `%raw` | `raw_<wfnBase>.txt` | `raw_<wfnBase>.out` |
 
-若同名模块块或匿名块重复出现，第二个及之后的块会追加编号后缀：`_1`、`_2`、……
+若同名 module 块或 raw 块重复出现，第二个及之后的块会自动追加编号后缀，例如 `_1`、`_2`。这意味着，即便你在同一脚本中多次调用同一模块，程序仍能为每个块生成彼此可区分的中间文件与日志文件。
 
 ### `%command` 临时脚本
 
-`%command` 在执行时会临时生成脚本文件，并在执行后删除：
+`%command` 在执行时会临时生成脚本文件，并在执行后删除。命名模式如下：
 
 | 平台 | 文件名模式 |
 | --- | --- |
-| Linux / POSIX | `<module>_commands[_{N}].sh`、`raw_commands[_{N}].sh` 或 `commands[_{N}].sh` |
-| Windows | 对应 `.bat`；若启用 Git Bash，则生成 `.sh` |
+| Linux / POSIX | `<module>_commands[_{N}].sh`、`raw_commands[_{N}].sh` |
+||或 `commands[_{N}].sh` |
+| Windows | 上述相应 `.bat`；若启用 Git Bash，则依然生成 `.sh` |
+
+如果用户在调试 `%command` 时发现命令块没有按预期工作，最直接的办法通常是使用 `--dryrun` 查看替换后的命令内容，而不是试图在执行后寻找临时脚本残留。
 
 ## `%command` 的平台执行规则
 
 ### Linux / POSIX
 
-- 程序会生成 `#!/bin/bash` 开头的临时 `.sh` 脚本。
-- 脚本设置可执行权限后直接运行。
+在 Linux / POSIX 平台下，程序会生成带 `#!/bin/bash` 头的临时 `.sh` 脚本，赋予执行权限后直接运行。对于一般的文件移动、目录创建和外部工具调用，这种模式足够直接，也与大多数科研脚本工作流兼容。
 
 ### Windows
 
-- 默认生成 `.bat` 并通过 `cmd /c` 执行。
-- 若 `banewfn.rc` 中配置了 `gitbash_exec`，且 `%command` 第一行是 `#!/bin/bash`，则改为使用 Git Bash 执行。
+在 Windows 下，默认行为是生成 `.bat` 脚本，并通过 `cmd /c` 执行；若 `banewfn.rc` 中配置了 `gitbash_exec`，且 `%command` 第一行是 `#!/bin/bash`，则程序会改为使用 Git Bash 执行该命令块。
+
+因此，同一份脚本既可以写成 Windows 原生命令风格，也可以在明确声明 `#!/bin/bash` 的前提下保留更接近 POSIX 的写法，减少跨平台迁移时的重复维护。
+
+## 其他行为说明
+
+下面这些规则虽然不复杂，但在脚本调试时经常会遇到：
+
+- `%raw` 与 `%command` 中的 `#` 行是字面内容，不是输入文件注释；
+- 自定义变量与命令行 `-v` 要求使用 `key=value` 且 `value` 非空；
+- 当前版本中，输入文件头 `wfn=` 在实际执行阶段会覆盖命令行 `-w` 与第二个位置参数；
+- `%command` 只有在前置 Multiwfn 块返回成功时才会自动执行，独立 `%command` 块除外；
+- `wait` 模式与 `--screen` 模式通常不会生成 `.out` 文件，因此 `${output}` 为空；
+- `wfn_rebase` 目标文件缺失只会产生警告，不会阻止后续任务继续提交给 Multiwfn；
+- 通配符展开只处理普通文件，不处理目录。
+
+如果你希望脚本行为可预测、可交付，那么最稳妥的策略永远是：把核心流程写成模块，把例外写进 `%raw`，把结果整理写进 `%command`，同时通过 `--dryrun` 验证生成的命令文件和变量替换结果。
+
+# inline conf 与单文件打包
+
+## inline conf 语法
+
+inline conf 允许把模块配置直接嵌入输入文件末尾，从而把原本依赖外部 `.conf` 的脚本，打包成一个可单独分发的自包含文件。其语法如下：
+
+```text
+#>>> BANEWFN_INLINE_CONF_BEGIN fmo
+# [main]
+# 200
+# [orb]
+# 3
+# ${index:-h}
+# [quit]
+# 0
+# q
+#<<< BANEWFN_INLINE_CONF_END fmo
+```
+
+其规则如下：
+
+- 每个块都绑定一个模块名；
+- 块内容按“每行前加一个 `#`”的方式写在文件末尾；
+- 读取时，程序会去掉每行最前面的一个 `#` 以及其后的一个可选空白字符；
+- 若输入文件中存在对应模块的 inline conf，则优先使用内嵌文本，而不是 `confpath` 下的外部文件。
+
+在项目交付中，inline conf 的意义非常明确：它让“脚本逻辑”和“模块定义”被打包到同一个文件中，从而大幅减少“别人拿到脚本却跑不起来”的情况。
+
+## `bwpack` 打包规则
+
+`bwpack` 用于把输入文件中**实际引用到的模块配置**打包到文件末尾，生成自包含的 `.bwc` 脚本。其行为可以概括如下：
+
+- 先解析输入文件，找出其中实际使用到的模块名；
+- 再逐个读取对应 `.conf` 文本；
+- 去除原文件中已有的 inline conf 尾块；
+- 最后在文件末尾追加新的 `#>>> BANEWFN_INLINE_CONF_BEGIN ...` / `#<<< ...` 打包块。
+
+Note：
+
+- 纯 `%raw` / `%command` 脚本不依赖配置文件，无需过bwpack包装；
+- 输入文件中的 inline conf 应置于文件末尾；重新打包时，旧 inline conf 尾块会被整体替换；
+- `bwpack` 只打包**脚本实际引用到的模块**，不会把整个 `confpath` 目录无差别塞进输出文件。
 
 # 命令行工具
 
 ## `banewfn`
 
 ### 基本用法
+
+`banewfn` 是主程序，它负责解析输入文件、加载模块配置、展开批量任务并执行整个工作流。基本调用方式如下：
 
 ```text
 banewfn <input.inp> <molecule.fchk> [options]
@@ -737,13 +759,7 @@ banewfn -w <molecule.fchk> <input.inp> [options]
 
 ### 波函数文件来源规则
 
-当前版本的实际执行规则如下：
-
-1. 若输入文件头部定义了 `wfn=`，执行阶段使用该值作为波函数文件模式。
-2. 若输入文件头部未定义 `wfn=`，则使用命令行 `-w/--wfn` 或第二个位置参数。
-3. 若两者都未给出，则启动交互式提问。
-
-因此，当前版本中输入文件头部的 `wfn=` 会覆盖命令行 `-w` 与第二个位置参数。
+命令行 `-w/--wfn` 将覆盖输入文件头部`wfn=`。若均不存在，在启动后向用户交互式询问。
 
 ### 核心数来源规则
 
@@ -753,6 +769,8 @@ banewfn -w <molecule.fchk> <input.inp> [options]
 2. 输入文件头部 `core=`
 3. `banewfn.rc` 中的 `cores`
 
+对于需要临时提高并行度的场景，直接使用 `-c` 即可，无需改动脚本本身。
+
 ### 变量来源规则
 
 变量按以下顺序确定：
@@ -761,18 +779,22 @@ banewfn -w <molecule.fchk> <input.inp> [options]
 2. 输入文件头部自定义变量
 3. 交互式变量输入值
 
+在项目协作中，推荐把“稳定默认值”写进脚本，把“每次都可能变动的值”通过命令行传入。这样既能保留脚本的可读性，又能避免为了少量输入差异频繁复制脚本。
+
 ### `-l` 列表功能
 
 `banewfn -l` 的行为如下：
 
-- 先读取 `banewfn.rc` 以确定 `confpath`。
-- 无模块名时，列出 `confpath` 目录下所有 `.conf` 文件的基名。
-- 有模块名时，读取对应 `.conf` 并显示各 section 与识别到的参数名摘要。
+- 读取 `banewfn.rc` 以确定 `confpath`；
+- 无模块名参数时，列出 `confpath` 目录下所有 `.conf` 文件的基名；
+- 有模块名参数时，读取对应 `.conf` 并显示各 section 与识别到的参数名摘要；
 - `[quit]` 不在摘要中显示。
+
+对于维护模块库的人来说，`-l` 是一个非常实用的“快速自查”入口。它可以帮助你确认某个模块是否存在、有哪些 section、参数大致是什么，而不必每次都手工打开 `.conf` 文件通读。
 
 ## `bwpack`
 
-`bwpack` 用于把输入文件中实际引用到的外部模块配置打包到同一文件末尾，生成自包含的 `.bwc` 脚本。
+`bwpack` 用于把输入文件中实际引用到的外部模块配置打包到同一文件末尾，生成自包含的 `.bwc` 脚本。它的重点不是执行工作流，而是整理交付形式。
 
 ### 基本用法
 
@@ -792,275 +814,12 @@ bwpack <input.bw> [options]
 
 ### `bwpack` 的行为
 
-- 先解析输入文件，找出其中实际使用到的模块名。
-- 逐个读取对应 `.conf` 文本。
-- 去除原文件中已有的 inline conf 尾块。
-- 在文件末尾追加新的 `#>>> BANEWFN_INLINE_CONF_BEGIN ...` / `#<<< ...` 打包块。
-
-# 内置模块配置参考
-
-## 总览
-
-当前随附模块如下：
-
-- `aromatic`
-- `bond_order`
-- `cdft`
-- `charge`
-- `cp2k`
-- `dos`
-- `excit`
-- `fmo`
-- `grid`
-- `hole-ele`
-- `modwfn`
-- `nbo`
-- `no`
-- `of2`
-- `plane`
-- `plane_fromcub`
-- `spectrum`
-- `surface`
-- `weak`
-
-下列参考只描述当前随附 `.conf` 文件中实际提供的 section、参数和默认值。模块名与步骤名均区分大小写。
-
-## `aromatic`
-
-用途：芳香性相关流程，包含二维 NICS 图与输入文件生成步骤。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `gen2dinp` | `grid`, `ring`, `distance`, `range`, `template` | `distance=1`, `range=6`, `template=template.gjf` | 生成二维扫描输入。 |
-| `genicssinp` | `grid`, `template` | `grid=2`, `template=template.gjf` | 生成 ICSS 输入。 |
-| `nics2d` | `grid`, `ring`, `distance`, `range`, `outfile`, `vector` | `distance=1`, `range=6`, `outfile=NICS_2D.log` | 二维 NICS 绘图流程。 |
-
-## `bond_order`
-
-用途：键级矩阵与相关导出。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `mayer` | 无 | 无 | Mayer 键级流程。 |
-| `wiberg` | 无 | 无 | Wiberg 键级流程。 |
-| `mulliken` | 无 | 无 | Mulliken 键级流程。 |
-| `fuzzy` | 无 | 无 | Fuzzy bond order 流程。 |
-| `Laplacian` | 无 | 无 | 基于 Laplacian 的键级流程。 |
-| `writegjf` | 无 | 无 | 导出 Gaussian 输入相关流程。 |
-
-## `cdft`
-
-用途：概念密度泛函相关流程。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `fukui` | `grid` | `grid=2` | Fukui 数据导出流程。 |
-| `ow` | `grid` | `grid=2` | 另一组 CDFT 结果导出流程。 |
-
-## `charge`
-
-用途：原子电荷分析。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `hirshfeld` | 无 | 无 | Hirshfeld 电荷。 |
-| `mulliken` | 无 | 无 | Mulliken 电荷。 |
-| `aim` | `pop` | 空 | AIM 电荷流程。 |
-| `adch` | 无 | 无 | ADCH 电荷。 |
-
-## `cp2k`
-
-用途：CP2K 相关流程与设置项。该模块的 `[main]` 可使用参数 `filename`，默认空字符串。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `molden` | 无 | 无 | 进入 molden 相关流程。 |
-| `D3` | `D3` | `D3=2` | D3 相关设置。 |
-| `ot` | 无 | 无 | OT 相关设置。 |
-| `tddft` | `number` | `number=40` | TDDFT 相关设置。 |
-| `dft+u` | 无 | 无 | DFT+U 设置。 |
-| `cutoff` | `cut` | `cut=400,55` | 截断相关设置。 |
-| `print` | `level` | `level=2` | 输出级别设置。 |
-| `eorb` | 无 | 无 | 电子轨道相关设置。 |
-| `vnumber` | `number` | `number=30` | 虚轨道数设置。 |
-| `charge` | `charge` | 无 | 电荷设置。 |
-| `spin` | `spin` | 无 | 自旋设置。 |
-
-## `dos`
-
-用途：态密度与分片态密度分析。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `frag` | `fragindex`, `option` | 无 | 定义一个片段 DOS。 |
-| `draw` | 无 | 无 | 执行绘图相关流程。 |
-| `plottype` | `plottype` | `plottype=1` | 绘图输出类型；conf 注释标出 `1=png`, `7=pdf(d)`, `9=svg`。 |
-| `data` | 无 | 无 | 导出数据。 |
-| `plot` | 无 | 无 | 执行最终绘图。 |
-
-## `excit`
-
-用途：激发态、NTO 与片段间电荷转移分析。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `holeheatmap` | `logfile`, `state`, `charge`, `fragfile` | `state=1`, `charge=1`, `fragfile=fragdef.txt` | 空穴热图流程。 |
-| `nto` | `logfile`, `state`, `path` | `state=1`, `path=./ex_<state>.fchk` | 生成或导出 NTO 相关文件。 |
-| `no` | `logfile`, `state` | `state=1` | 激发态相关 natural orbital 流程。 |
-| `ifctdata` | `charge`, `logfile`, `state`, `fragdef` | `charge=1` | IFCT 数据导出。 |
-| `ifct` | `charge`, `logfile`, `state`, `fragdef` | `charge=1`, `fragdef=空字符串` | IFCT 图与矩阵流程。 |
-
-## `fmo`
-
-用途：前线轨道与指定轨道导出。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `orb` | `index`, `grid` | `index=h`, `grid=2` | 指定前线轨道，如 `h`、`l`。 |
-| `orb_num` | `index`, `grid` | `grid=2` | 按轨道编号导出；conf 注释标出输出为 `orb0000xx.cub`。 |
-
-## `grid`
-
-用途：网格、密度、ELF、LOL 与 ESP 相关流程。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `wfn2` | `operator` | 无 | 定义第二波函数与运算符。 |
-| `electron` | `grid` | `grid=3` | 电子密度网格；conf 注释标出 `density.cub`。 |
-| `spin` | `grid` | `grid=2` | 自旋密度网格；conf 注释标出 `spindensity.cub`。 |
-| `elf` | `grid` | `grid=3` | ELF 网格；conf 注释标出 `ELF.cub`。 |
-| `lol` | `grid` | `grid=3` | LOL 网格；conf 注释标出 `LOL.cub`。 |
-| `esp` | `grid` | `grid=1` | ESP 相关流程；conf 注释标出 `totesp.cub`。此步骤会切换到 `cub` 文件环境，通常应放在 `grid` 模块最后。 |
-
-## `hole-ele`
-
-用途：空穴-电子分析。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `cub` | `choice` | `choice=1` | 生成 hole/electron cub 相关流程；`choice` 注释标出 `1=total`, `2=local`, `3=cross`。 |
-| `overlap` | `func` | `func=2` | 重叠函数分析；注释标出 `1=Sm`, `2=Sr`。 |
-| `transdens` | 无 | 无 | 跃迁密度。 |
-| `tdm` | `component` | `component=1` | 跃迁偶极矩密度；注释标出 `1=x`, `2=y`, `3=z`, `4=Norm`。 |
-| `cdd` | 无 | 无 | 电荷密度差。 |
-| `Cele` | 无 | 无 | 高斯平滑相关流程。 |
-
-该模块的 `[main]` 还使用参数 `logfile`、`state`、`grid`；其默认值分别为 `logfile=空字符串`、`state=1`、`grid=2`。
-
-## `modwfn`
-
-用途：修改波函数相关流程。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `orblist` | 无 | 无 | 轨道列表相关流程。 |
-
-## `nbo`
-
-用途：NBO 拟合相关流程。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `denfit` | `den_cub`, `constraint`, `NBOtype` | `den_cub=density.cub`, `constraint=1` | 密度拟合流程；conf 注释标出 `fitted.cub`。 |
-
-## `no`
-
-用途：natural orbital / 多种 NO 方案导出。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `SCF` | 无 | 无 | SCF NO 流程。 |
-| `CI` | 无 | 无 | CI NO 流程。 |
-| `RHO` | 无 | 无 | `CI Rho(1)` 流程。 |
-
-## `of2`
-
-用途：双波函数相关的轨道积分流程。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `orb_integral` | `range`, `fch2`, `itype` | `itype=-1` | 需要第二个文件 `fch2`；conf 注释标出输出为 `convmat.txt`。 |
-
-## `plane`
-
-用途：基于当前波函数的二维平面绘图，并以 `wait` 模式继续手动调整。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `spin_wait` | `grid`, `plane` | `grid=200,200` | 自旋密度平面绘图流程。 |
-| `elf_wait` | `grid`, `plane` | `grid=200,200` | ELF 平面绘图流程。 |
-
-## `plane_fromcub`
-
-用途：从 `cub` 文件出发的二维平面绘图。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `autoplot` | `grid`, `plane` | `grid=200,200` | 自动绘图并导出 `plane.txt`。 |
-| `drawplot` | `grid`, `plane` | `grid=200,200` | 绘图但不包含自动导出 `plane.txt` 的后续步骤。 |
-
-## `spectrum`
-
-用途：光谱数据与图形导出。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `uvvis-data` | 无 | 无 | UV-Vis 数据流程。 |
-| `ecd-data` | 无 | 无 | ECD 数据流程。 |
-| `ecd-fwhm` | `FWHM` | `FWHM=0.8` | 带指定 FWHM 的 ECD 流程。 |
-
-## `surface`
-
-用途：分子表面与 ESP 外推相关流程。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `espext` | 无 | 无 | ESP 外推流程。 |
-
-## `weak`
-
-用途：弱相互作用与 IGM/IRI/NCI 分析。
-
-| 步骤 | 参数 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `nci` | `grid` | `grid=2` | NCI 分析。 |
-| `iri` | `grid` | `grid=2` | IRI 分析。 |
-| `igm` | `denstiy`, `grid` | `denstiy=2`, `grid=2` | IGM 分析；当前参数名拼写为 `denstiy`。 |
-| `igmh` | `grid` | `grid=2` | IGMH 分析。 |
-| `igmh_f2` | `frag1`, `frag2`, `grid` | `grid=2` | 指定双片段的 IGMH 分析。 |
-
-# inline conf 与单文件打包
-
-## inline conf 语法
-
-内嵌配置使用如下标记：
-
-```text
-#>>> BANEWFN_INLINE_CONF_BEGIN fmo
-# [main]
-# 200
-# [orb]
-# 3
-# ${index:-h}
-# [quit]
-# 0
-# q
-#<<< BANEWFN_INLINE_CONF_END fmo
-```
-
-规则如下：
-
-- 每个块绑定一个模块名。
-- 块内容按“每行前加一个 `#`”的方式写在文件末尾。
-- 读取时，程序会去掉每行最前面的一个 `#` 以及其后的一个可选空白字符。
-- 若输入文件中存在对应模块的 inline conf，则优先使用内嵌文本而不是 `confpath` 下的外部文件。
-
-## `bwpack` 打包规则
-
-`bwpack` 当前只会打包输入文件中**实际引用到的模块**。因此：
-
-- 纯 `%raw` / `%command` 脚本没有模块可打包，`bwpack` 不适合作为其封装工具。
-- 输入文件中的 inline conf 应位于文件尾部；打包时程序会从第一个 inline conf 开始丢弃后续旧尾块，再写入新的打包内容。
+- 先解析输入文件，找出其中实际使用到的模块名；
+- 逐个读取对应 `.conf` 文本；
+- 去除原文件中已有的 inline conf 尾块；
+- 在文件末尾追加新的打包块。
+
+如果你的目标是把脚本发给别人、存档到项目目录，或者减少“缺少 conf 文件”造成的环境问题，那么 `bwpack` 通常是交付前最后一步非常值得做的整理工作。
 
 # 示例
 
@@ -1075,7 +834,7 @@ wfn=test.fchk
 end
 ```
 
-该脚本会加载 `fmo.conf`，执行 `[main]` 后再执行 `orb` 步骤，并在 `end` 模式下自动追加 `[quit]`。
+该脚本会加载 `fmo.conf`，执行 `[main]` 后再执行 `orb` 步骤，并在 `end` 模式下自动追加 `[quit]`。如果你第一次验证环境是否可用，建议就从这种最小示例开始，因为它最容易定位是配置问题、模块问题还是 Multiwfn 本体问题。
 
 ## 模块与后处理联合示例
 
@@ -1096,11 +855,13 @@ mv ${output} ESP/
 end
 ```
 
-说明如下：
+这个例子展示了“模块执行 + 结果归档”的典型组合方式。其含义如下：
 
-- `wfn=*.fchk` 会批量匹配所有 `fchk` 文件。
-- `%command` 中 `${input}` 使用当前文件基名。
-- `${output}` 表示当前块对应的 `.out` 文件。
+- `wfn=*.fchk` 会批量匹配当前目录下所有 `fchk` 文件；
+- `%process` 调用模块中的两个步骤，分别生成电子密度和 ESP 网格；
+- `%command` 负责创建目录、重命名文件并把 `.out` 一并归档；
+- `${input}` 会在每一轮执行中替换为当前文件的基名；
+- `${output}` 会被替换为当前块实际产生的 `.out` 文件名。
 
 ## 数组变量示例
 
@@ -1114,73 +875,122 @@ state=(1 2 3)
 end
 ```
 
-该脚本会对 `state=1`、`2`、`3` 依次重复执行整套任务。
+该脚本会对 `state=1`、`state=2`、`state=3` 依次重复执行整套任务。通过这一写法，可以把原本需要复制三份脚本的参数扫描，浓缩为一份结构清晰的工作流定义。
 
 ## `wfn_rebase` 示例
 
 ```ini
 wfn=origin.fchk
-
-[hole-ele]
+state=1
+[excit]
 %process
-    cub
+no state ${state}
 end
 
-wfn_rebase=hole.cub
+wfn_rebase=NO_000${state}.mwfn
 
-%raw
-5
-q
-end
-
-wfn_rebase=
-
-[fmo]
+[grid]
 %process
-    orb index h
+    electron
+    esp
+%command
+#!/bin/bash
+    mkdir -p ESP_${state}
+    mv density.cub ESP_${state}/${input}_den.cub
+    mv totesp.cub ESP_${state}/${input}_esp.cub
+    mv NO_000${state}.mwfn ${output} ESP_${state}
+    cat << EOF > ESP_${state}/esp.bat
+    vmd -e esp.vmd
+EOF
+
+    cat << EOF2 > ESP_${state}/esp.vmd
+    vcube *_den.cub map *_esp.cub
+    set colorlow -20
+    set colorhigh 20
+    mol scaleminmax 0 1 -20 20
+    puts "unit: kcal/mol"
+EOF2
 end
 ```
 
-说明如下：
+该脚本展示了“先生成中间文件，再切换输入继续分析”的典型写法：
 
-- 第一段使用 `origin.fchk`。
-- `wfn_rebase=hole.cub` 后，后续 `%raw` 改为以 `hole.cub` 作为 Multiwfn 输入。
-- 空的 `wfn_rebase=` 会把输入恢复为本轮原始文件。
+- 第一段以 `origin.fchk` 作为输入，生成后续会用到的 `NO_0001.mwfn`；
+- `wfn_rebase=NO_0001.mwfn` 之后，后续 `grid` 块会改为以 `NO_0001.mwfn` 作为 Multiwfn 输入计算静电势。
+
+相比把这些步骤拆成两个脚本手工接力，这种写法可以把输入切换关系直接保留在一份文件里，后期复查时也更容易看懂整条数据流。
 
 ## 自包含 `.bwc` 工作流示例
 
 ```bash
-bwpack workflow.bw -c /path/to/conf
+bwpack workflow.bw
 ```
 
-执行后会生成 `workflow.bwc`，其中包含该脚本实际使用到的模块配置块。
+执行后会生成 `workflow.bwc`，其中包含该脚本实际使用到的模块配置块。对于需要共享给同事、附在项目归档中，或者在另一台机器上尽量减少外部依赖的场景，这种自包含脚本往往更稳妥。
 
-# 当前行为与限制
+# 故障排查与使用建议
 
-## 输入语法与占位符
+## 找不到 `banewfn.rc`
 
-- 模块头 `[module]` 必须顶格书写。
-- 模块参数与 `%process` 参数使用空格分隔，不支持带空格的值。
-- 输入文件占位符不支持 `${var:-default}`，该语法仅在 `.conf` 模板内有效。
-- `%raw` 与 `%command` 中的 `#` 行是字面内容，不是输入文件注释。
-- 自定义变量与命令行 `-v` 当前要求 `key=value` 中 `value` 非空；需要运行时填写时应使用 `?`。
+如果程序提示找不到 `banewfn.rc`，首先检查查找顺序对应的位置是否确实存在文件。若只是临时测试环境，可以在当前目录放一个最小配置，例如：
 
-## 执行语义
+```ini
+Multiwfn_exec=Multiwfn
+confpath=/path/to/conf
+```
 
-- 当前版本中，输入头 `wfn=` 会在执行阶段覆盖命令行 `-w` 与第二个位置参数。
-- `%command` 只有在前置 Multiwfn 块返回成功时才会自动执行；独立 `%command` 块除外。
-- `wait` 模式与 `--screen` 模式通常不会生成 `.out` 文件，因此 `${output}` 为空。
-- `wfn_rebase` 目标文件缺失只产生警告，不会阻止后续任务继续提交给 Multiwfn。
+一旦最小配置能让程序启动，再逐步补充 `cores`、`gitbash_exec` 等可选项，会比一次性排查所有配置更高效。
 
-## 数组与批量执行
+## 找不到模块 `.conf`
 
-- 多个数组变量必须具有相同长度。
-- 任务展开顺序固定为“文件循环在外，数组索引循环在内”。
-- 通配符展开只处理普通文件，不处理目录。
+若模块无法加载，建议优先确认以下几项：
 
-## 模块与打包
+- `confpath` 是否正确；
+- 模块名与文件名是否一致，例如 `[fmo]` 应对应 `fmo.conf`；
+- 输入文件里是否存在同名 inline conf，以及 marker 是否书写正确。
 
-- 模块名、步骤名与 `.conf` section 名大小写敏感。
-- 若模块配置缺少 `[quit]`，程序会自动补一条 `q`。
-- `bwpack` 只打包已被输入文件引用到的模块配置。
-- 输入文件中的 inline conf 应置于文件末尾；重新打包时，旧 inline conf 尾块会被整体替换。
+对于团队共享配置库的场景，最常见的问题往往不是 `.conf` 内容本身，而是路径与模块命名不一致。
+
+## 变量没有被替换
+
+如果发现变量仍以 `${name}` 形式原样出现在命令中，通常优先排查这几种情况：
+
+- 变量名是否拼写错误；
+- 是否误把模块参数写成了 `key=value`，而不是 `key value`；
+- `%raw` / `%command` 里的 `${output}` 是否被用在不会生成 `.out` 的场景，例如 `wait` 或 `--screen`；
+- 你是否把 `.conf` 占位符和输入文件占位符混用了。
+
+调试这类问题时，`--dryrun` 通常是最有价值的工具，因为它能直接展示替换后的命令文件和命令块内容。
+
+## `%raw` 运行异常
+
+`%raw` 的本质是原样注入，因此它出错时，往往不是 BaneWfn 语法错误，而是你提供给 Multiwfn 的原始输入序列本身不合法。建议先使用：
+
+```bash
+banewfn input.inp molecule.fchk --dryrun
+```
+
+然后查看生成的 `raw_*.txt` 或模块 `*.txt` 是否符合预期，再决定问题出在变量替换、输入顺序还是原始命令本身。
+
+## Windows 下 `%command` 里的 bash 脚本不执行
+
+如果你在 Windows 中写了 `#!/bin/bash` 风格的 `%command`，但实际没有按 bash 执行，请确认：
+
+- `banewfn.rc` 中已经配置 `gitbash_exec`；
+- `%command` 首行确实是 `#!/bin/bash`；
+- 路径里有空格时，`gitbash_exec` 最好加引号；
+- 命令块内部使用的是 Git Bash 可以识别的路径与命令格式。
+
+一个实用建议是：如果团队主要在 Windows 上使用，而 bash 风格命令又不是刚需，那么优先使用 `.bat` / `cmd` 语法会更省心；只有当你明确需要与 Linux 侧脚本保持一致时，再切换到 Git Bash。
+
+## 编写脚本的几个实践建议
+
+最后给出几条在长期维护中非常有用的经验：
+
+- 先把变量集中写在文件头部，再写任务块；这样脚本更像“说明书”，而不是散落着局部补丁的流水账。
+- 对稳定步骤优先写模块，对一次性例外优先用 `%raw`；这样可以避免把通用 `.conf` 写得越来越脏。
+- 对所有需要归档的结果，尽量在 `%command` 中显式重命名并移动目录，而不要依赖“默认输出文件刚好不会撞名”。
+- 在批量执行前，先用单个样例文件配合 `--dryrun` 验证命令展开结果，再放大到整个目录。
+- 在准备分发脚本前，用 `bwpack` 打出 `.bwc` 版本，通常能省掉大量环境沟通成本。
+
+如果把 BaneWfn 视为一套“可长期维护的实验脚本体系”，而不是“临时能跑就行的包装器”，那么这些看似琐碎的约定，往往正是决定脚本能否真正复用的关键。

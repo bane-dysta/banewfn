@@ -728,7 +728,12 @@ public:
         }
         
         // Use wfn file from input file if specified, otherwise use command line argument
-        std::string wfnPattern = inputWfnFile.empty() ? wfnFile : inputWfnFile;
+        std::string wfnPattern;
+        if (!wfnFile.empty()) {
+            wfnPattern = wfnFile;          // 命令行/位置参数优先
+        } else {
+            wfnPattern = inputWfnFile;     // 否则回退到输入文件 wfn=
+        }
         
         // 展开通配符
         std::vector<std::string> wfnFiles = Utils::expandWildcard(wfnPattern);
@@ -792,26 +797,16 @@ public:
         };
         promptInteractiveVars(allCustomVars);
         
-        // Check if any variable is an array (has more than one element)
-        // Find the array variable with maximum size to determine iteration count
-        size_t maxArraySize = 1;
-        std::string arrayVarName;
+        // Collect array variables and expand them as a Cartesian product.
+        std::vector<std::string> arrayVarNames;
         for (const auto& var : allCustomVars) {
-            if (var.second.size() > maxArraySize) {
-                maxArraySize = var.second.size();
-                arrayVarName = var.first;
+            if (var.second.size() > 1) {
+                arrayVarNames.push_back(var.first);
             }
         }
-        
-        // If multiple arrays exist, they must have the same size
-        for (const auto& var : allCustomVars) {
-            if (var.second.size() > 1 && var.second.size() != maxArraySize) {
-                std::cerr << "Error: Array variables have different sizes. Variable '" 
-                         << var.first << "' has " << var.second.size() 
-                         << " elements, but maximum is " << maxArraySize << std::endl;
-                return false;
-            }
-        }
+
+        const auto variableCombinations = Utils::expandVariableCombinations(allCustomVars);
+        const size_t combinationCount = variableCombinations.size();
         
         if (tasks.empty()) {
             std::cerr << "Error: No modules found in inp file" << std::endl;
@@ -867,45 +862,46 @@ public:
             }
         }
         
-        // 对每个匹配的文件和每个数组元素执行任务
+        // 对每个匹配的文件和每个变量组合执行任务
         bool allSuccess = true;
         for (size_t fileIdx = 0; fileIdx < wfnFiles.size(); fileIdx++) {
             std::string finalWfnFile = wfnFiles[fileIdx];
-            
-            // 对每个数组索引执行（如果有数组变量）
-            for (size_t arrayIdx = 0; arrayIdx < maxArraySize; arrayIdx++) {
-                // 创建当前迭代的变量映射（使用数组的当前索引值）
-                std::map<std::string, std::vector<std::string>> currentVars;
-                for (const auto& var : allCustomVars) {
-                    if (var.second.size() > 1) {
-                        // 数组变量：使用当前索引的值
-                        currentVars[var.first] = {var.second[arrayIdx]};
-                    } else {
-                        // 单个值：保持不变
-                        currentVars[var.first] = var.second;
-                    }
-                }
-                
+
+            // 对每个变量组合执行（多个数组变量时取笛卡尔积）
+            for (size_t combinationIdx = 0; combinationIdx < combinationCount; combinationIdx++) {
+                const auto& currentVars = variableCombinations[combinationIdx];
+
                 // 显示当前执行信息
-                if (wfnFiles.size() > 1 || maxArraySize > 1) {
+                if (wfnFiles.size() > 1 || combinationCount > 1) {
                     std::cout << "\n========================================" << std::endl;
                     if (wfnFiles.size() > 1) {
-                        std::cout << "Processing file " << (fileIdx + 1) << "/" << wfnFiles.size() 
+                        std::cout << "Processing file " << (fileIdx + 1) << "/" << wfnFiles.size()
                                   << ": " << finalWfnFile;
                     }
-                    if (maxArraySize > 1) {
+                    if (combinationCount > 1) {
                         if (wfnFiles.size() > 1) std::cout << " | ";
-                        std::cout << "Iteration " << (arrayIdx + 1) << "/" << maxArraySize;
-                        // 显示当前数组变量的值
-                        if (!arrayVarName.empty() && currentVars.find(arrayVarName) != currentVars.end()) {
-                            std::cout << " (" << arrayVarName << "=" << currentVars[arrayVarName][0] << ")";
+                        std::cout << "Combination " << (combinationIdx + 1) << "/" << combinationCount;
+                        if (!arrayVarNames.empty()) {
+                            std::cout << " (";
+                            for (size_t i = 0; i < arrayVarNames.size(); i++) {
+                                const auto& varName = arrayVarNames[i];
+                                auto it = currentVars.find(varName);
+                                if (i > 0) {
+                                    std::cout << ", ";
+                                }
+                                std::cout << varName << "=";
+                                if (it != currentVars.end() && !it->second.empty()) {
+                                    std::cout << it->second[0];
+                                }
+                            }
+                            std::cout << ")";
                         }
                     }
                     std::cout << std::endl;
                     std::cout << "========================================\n" << std::endl;
                 }
-                
-                // 为当前文件和数组索引创建任务副本并应用占位符替换
+
+                // 为当前文件和当前变量组合创建任务副本并应用占位符替换
                 std::vector<ModuleTask> fileTasks = tasks;
                 InputParser::applyPlaceholderReplacement(fileTasks, finalWfnFile, currentVars);
 

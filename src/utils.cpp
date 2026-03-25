@@ -1,5 +1,6 @@
 #include "utils.h"
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <algorithm>
 #include <cctype>
@@ -202,6 +203,42 @@ std::vector<std::string> Utils::parseBashArray(const std::string& value) {
     }
 
     return result;
+}
+
+std::vector<std::map<std::string, std::vector<std::string>>> Utils::expandVariableCombinations(
+    const std::map<std::string, std::vector<std::string>>& vars) {
+    std::vector<std::map<std::string, std::vector<std::string>>> combinations;
+    std::vector<std::pair<std::string, const std::vector<std::string>*>> arrayVars;
+
+    for (const auto& var : vars) {
+        if (var.second.size() > 1) {
+            arrayVars.push_back({var.first, &var.second});
+        }
+    }
+
+    if (arrayVars.empty()) {
+        combinations.push_back(vars);
+        return combinations;
+    }
+
+    std::map<std::string, std::vector<std::string>> currentVars = vars;
+
+    std::function<void(size_t)> buildCombinations = [&](size_t depth) {
+        if (depth >= arrayVars.size()) {
+            combinations.push_back(currentVars);
+            return;
+        }
+
+        const std::string& name = arrayVars[depth].first;
+        const std::vector<std::string>& values = *arrayVars[depth].second;
+        for (const auto& value : values) {
+            currentVars[name] = {value};
+            buildCombinations(depth + 1);
+        }
+    };
+
+    buildCombinations(0);
+    return combinations;
 }
 
 std::vector<std::string> Utils::parseCommandLineArgs(const std::string& argsStr) {
