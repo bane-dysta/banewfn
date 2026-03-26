@@ -9,7 +9,7 @@
 {\normalsize 模块化、可复用、可批量的分析脚本体系\par}
 \vspace{2.2cm}
 \begin{tabular}{rl}
-version： & 1.1 \\
+version： & 1.3 \\
 \end{tabular}
 \vfill
 {\large Bane QC Project\par}

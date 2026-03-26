@@ -1,5 +1,5 @@
 #define MyAppName "Banewfn"
-#define MyAppVersion "1.1"
+#define MyAppVersion "1.3"
 #define MyAppPublisher "Bane Dysta"
 #define MyAppURL "https://github.com/bane-dysta/banewfn"
 #define MyAppExeName "banewfn.exe"
@@ -49,6 +49,7 @@ Source: "..\build_windows\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversi
 Source: "..\build_windows\bwpack.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\conf\*.conf"; DestDir: "{app}\conf"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\docs\out\BaneWfn_Project_Manual_zh.pdf"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs 
 
 ; ===== 强关联注册表（分别写两个 ProgID）=====
 [Registry]
