@@ -4,8 +4,30 @@
 #include "test_helpers.h"
 
 #include <map>
+#include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
+
+namespace {
+
+class CinRedirectGuard {
+public:
+    explicit CinRedirectGuard(std::istream& replacement)
+        : oldBuffer_(std::cin.rdbuf(replacement.rdbuf())) {}
+
+    CinRedirectGuard(const CinRedirectGuard&) = delete;
+    CinRedirectGuard& operator=(const CinRedirectGuard&) = delete;
+
+    ~CinRedirectGuard() {
+        std::cin.rdbuf(oldBuffer_);
+    }
+
+private:
+    std::streambuf* oldBuffer_;
+};
+
+} // namespace
 
 TEST_SUITE("InputParser") {
 
@@ -162,6 +184,90 @@ TEST_CASE("applyPlaceholderReplacement handles input custom file and reserved ou
     };
     CHECK(tasks[0].commands == expectedCommands);
     CHECK(tasks[1].wfnRebaseFile == "final_sample_1.fchk");
+}
+
+TEST_CASE("parseInpFileWithWfnAndCoresAndVars accepts var* and len(var) headers") {
+    TempDir temp;
+    const auto inpFile = temp.path() / "special_vars.inp";
+
+    writeTextFile(inpFile, R"(wfn=demo.fchk
+frag*=?
+len(frag)=?
+
+[demo]
+%raw
+${len(frag)}
+${frag*}
+end
+)");
+
+    auto [tasks, wfnFile, cores, customVars, dryrun, nogui] =
+        InputParser::parseInpFileWithWfnAndCoresAndVars(inpFile.string());
+
+    (void)cores;
+    (void)dryrun;
+    (void)nogui;
+
+    REQUIRE(tasks.size() == 1);
+    CHECK(wfnFile == "demo.fchk");
+    REQUIRE(customVars.count("frag*") == 1);
+    REQUIRE(customVars.count("len(frag)") == 1);
+    CHECK(customVars.at("frag*").at(0) == "?");
+    CHECK(customVars.at("len(frag)").at(0) == "?");
+}
+
+TEST_CASE("resolveInteractiveCustomVars handles paired len(var)=? and var*=? prompts") {
+    std::map<std::string, std::vector<std::string>> customVars = {
+        {"frag*", {"?"}},
+        {"len(frag)", {"?"}}
+    };
+
+    std::istringstream fakeInput("3\n10\n20\n30\n");
+    CinRedirectGuard cinGuard(fakeInput);
+
+    InputParser::resolveInteractiveCustomVars(customVars);
+
+    REQUIRE(customVars.count("frag*") == 1);
+    REQUIRE(customVars.count("len(frag)") == 1);
+    CHECK(customVars.at("frag*").at(0) == "(10 20 30)");
+    CHECK(customVars.at("len(frag)").at(0) == "3");
+    CHECK(customVars.at("frag1").at(0) == "10");
+    CHECK(customVars.at("frag2").at(0) == "20");
+    CHECK(customVars.at("frag3").at(0) == "30");
+}
+
+TEST_CASE("applyPlaceholderReplacement expands var* in raw commands and resolves len(var)") {
+    ModuleTask task;
+    task.moduleName = "demo";
+    task.params["frag*"] = "${frag*}";
+    task.params["count"] = "${len(frag)}";
+    task.rawCommands = {
+        "${len(frag)}",
+        "${frag*}",
+        "show ${frag*}",
+        "keep ${output}"
+    };
+
+    std::vector<ModuleTask> tasks = {task};
+    std::map<std::string, std::vector<std::string>> customVars = {
+        {"frag*", {"(1 3 5)"}}
+    };
+    InputParser::resolveInteractiveCustomVars(customVars);
+    InputParser::applyPlaceholderReplacement(tasks, "/tmp/calc/sample.fchk", customVars);
+
+    CHECK(tasks[0].params.at("frag*") == "(1 3 5)");
+    CHECK(tasks[0].params.at("count") == "3");
+    const std::vector<std::string> expectedRaw = {
+        "3",
+        "1",
+        "3",
+        "5",
+        "show 1",
+        "show 3",
+        "show 5",
+        "keep ${output}"
+    };
+    CHECK(tasks[0].rawCommands == expectedRaw);
 }
 
 } // TEST_SUITE("InputParser")

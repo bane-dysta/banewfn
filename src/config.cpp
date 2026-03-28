@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <libgen.h>
 #include <limits.h>
+#include <cctype>
+#include <algorithm>
 
 #ifdef PLATFORM_WINDOWS
 #include <windows.h>
@@ -15,6 +17,217 @@
 #define PATH_MAX MAX_PATH
 #endif
 #endif
+
+namespace {
+
+struct ParsedPlaceholder {
+    size_t pos;
+    size_t endPos;
+    std::string varName;
+    std::string defaultValue;
+};
+
+bool parseNextPlaceholder(const std::string& text, size_t startPos, ParsedPlaceholder& out) {
+    const size_t pos = text.find('$', startPos);
+    if (pos == std::string::npos) {
+        return false;
+    }
+
+    size_t endPos = pos + 1;
+    out.pos = pos;
+    out.defaultValue.clear();
+    out.varName.clear();
+
+    if (endPos < text.length() && text[endPos] == '{') {
+        const size_t braceStart = endPos + 1;
+        const size_t braceEnd = text.find('}', braceStart);
+        if (braceEnd != std::string::npos) {
+            const std::string inside = text.substr(braceStart, braceEnd - braceStart);
+            const size_t defaultSep = inside.find(":-");
+            if (defaultSep != std::string::npos) {
+                out.varName = inside.substr(0, defaultSep);
+                out.defaultValue = inside.substr(defaultSep + 2);
+            } else {
+                out.varName = inside;
+            }
+            out.endPos = braceEnd + 1;
+            return true;
+        }
+    }
+
+    while (endPos < text.length() &&
+           (std::isalnum(static_cast<unsigned char>(text[endPos])) || text[endPos] == '_')) {
+        endPos++;
+    }
+    out.varName = text.substr(pos + 1, endPos - pos - 1);
+    out.endPos = endPos;
+    return true;
+}
+
+bool isLenVariableName(const std::string& varName, std::string* baseName = nullptr) {
+    if (varName.size() <= 5 || varName.rfind("len(", 0) != 0 || varName.back() != ')') {
+        return false;
+    }
+
+    const std::string base = varName.substr(4, varName.size() - 5);
+    if (base.empty()) {
+        return false;
+    }
+
+    if (baseName != nullptr) {
+        *baseName = base;
+    }
+    return true;
+}
+
+bool isListVariableName(const std::string& varName, std::string* baseName = nullptr) {
+    if (varName.size() <= 1 || varName.back() != '*') {
+        return false;
+    }
+
+    const std::string base = varName.substr(0, varName.size() - 1);
+    if (base.empty()) {
+        return false;
+    }
+
+    if (baseName != nullptr) {
+        *baseName = base;
+    }
+    return true;
+}
+
+bool parseIndexedVariableName(const std::string& varName, std::string* baseName, int* index) {
+    size_t splitPos = varName.size();
+    while (splitPos > 0 && std::isdigit(static_cast<unsigned char>(varName[splitPos - 1]))) {
+        splitPos--;
+    }
+
+    if (splitPos == 0 || splitPos == varName.size()) {
+        return false;
+    }
+
+    const std::string base = varName.substr(0, splitPos);
+    const std::string indexText = varName.substr(splitPos);
+    if (base.empty() || indexText.empty()) {
+        return false;
+    }
+
+    const int parsedIndex = std::atoi(indexText.c_str());
+    if (parsedIndex <= 0) {
+        return false;
+    }
+
+    if (baseName != nullptr) {
+        *baseName = base;
+    }
+    if (index != nullptr) {
+        *index = parsedIndex;
+    }
+    return true;
+}
+
+std::vector<std::string> parseListLiteral(const std::string& rawValue) {
+    const std::string trimmedValue = Utils::trim(rawValue);
+    if (trimmedValue.empty()) {
+        return {};
+    }
+    return Utils::parseBashArray(trimmedValue);
+}
+
+std::string serializeListValues(const std::vector<std::string>& values) {
+    if (values.empty()) {
+        return "";
+    }
+
+    if (values.size() == 1) {
+        return values.front();
+    }
+
+    std::string result = "(";
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            result += " ";
+        }
+        if (values[i].empty()) {
+            result += "\"\"";
+        } else {
+            result += values[i];
+        }
+    }
+    result += ")";
+    return result;
+}
+
+std::vector<std::string> collectListValues(const std::map<std::string, std::string>& params,
+                                           const std::string& baseName) {
+    const auto directIt = params.find(baseName + "*");
+    if (directIt != params.end()) {
+        const std::vector<std::string> directValues = parseListLiteral(directIt->second);
+        if (!directValues.empty()) {
+            return directValues;
+        }
+    }
+
+    std::vector<std::pair<int, std::string>> indexedValues;
+    for (const auto& kv : params) {
+        std::string indexedBase;
+        int index = 0;
+        if (parseIndexedVariableName(kv.first, &indexedBase, &index) && indexedBase == baseName) {
+            indexedValues.push_back({index, kv.second});
+        }
+    }
+
+    std::sort(indexedValues.begin(), indexedValues.end(),
+              [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+
+    std::vector<std::string> values;
+    for (const auto& item : indexedValues) {
+        values.push_back(item.second);
+    }
+    return values;
+}
+
+std::string resolveScalarPlaceholderValue(const std::string& varName,
+                                          const std::string& defaultValue,
+                                          const std::map<std::string, std::string>& params) {
+    const auto it = params.find(varName);
+    if (it != params.end() && !it->second.empty()) {
+        if (isListVariableName(varName)) {
+            const std::string baseName = varName.substr(0, varName.size() - 1);
+            const std::vector<std::string> values = collectListValues(params, baseName);
+            if (!values.empty()) {
+                return serializeListValues(values);
+            }
+        }
+        return it->second;
+    }
+
+    std::string baseName;
+    if (isLenVariableName(varName, &baseName)) {
+        const std::vector<std::string> values = collectListValues(params, baseName);
+        if (!values.empty()) {
+            return std::to_string(values.size());
+        }
+    }
+
+    if (isListVariableName(varName, &baseName)) {
+        const std::vector<std::string> values = collectListValues(params, baseName);
+        if (!values.empty()) {
+            return serializeListValues(values);
+        }
+    }
+
+    if (!defaultValue.empty()) {
+        if (isListVariableName(varName)) {
+            return serializeListValues(parseListLiteral(defaultValue));
+        }
+        return defaultValue;
+    }
+
+    return "";
+}
+
+} // namespace
 
 // Utility function: trim whitespace from string (deprecated - use Utils::trim instead)
 std::string trim(const std::string& str) {
@@ -334,59 +547,65 @@ bool ConfigManager::hasModuleConfig(const std::string& moduleName) const {
 std::string replacePlaceholders(const std::string& cmd, 
                                const std::map<std::string, std::string>& params) {
     std::string result = cmd;
-    
-    size_t pos = 0;
-    while ((pos = result.find('$', pos)) != std::string::npos) {
-        size_t endPos = pos + 1;
-        std::string varName;
-        std::string defaultValue;
-        
-        // Check for ${variable} syntax
-        if (endPos < result.length() && result[endPos] == '{') {
-            // Find closing brace
-            size_t braceStart = endPos + 1;
-            size_t braceEnd = result.find('}', braceStart);
-            if (braceEnd != std::string::npos) {
-                std::string inside = result.substr(braceStart, braceEnd - braceStart);
-                // Support Bash-style default: ${var:-default}
-                size_t defaultSep = inside.find(":-");
-                if (defaultSep != std::string::npos) {
-                    varName = inside.substr(0, defaultSep);
-                    defaultValue = inside.substr(defaultSep + 2);
-                } else {
-                    varName = inside;
-                }
-                endPos = braceEnd + 1;
-            } else {
-                // No closing brace found, treat as regular $variable
-                while (endPos < result.length() && 
-                       (isalnum(result[endPos]) || result[endPos] == '_')) {
-                    endPos++;
-                }
-                varName = result.substr(pos + 1, endPos - pos - 1);
-            }
-        } else {
-            // Regular $variable syntax
-            while (endPos < result.length() && 
-                   (isalnum(result[endPos]) || result[endPos] == '_')) {
-                endPos++;
-            }
-            varName = result.substr(pos + 1, endPos - pos - 1);
-        }
-        
-        std::string value = "";
-        auto it = params.find(varName);
-        if (it != params.end()) {
-            value = it->second;
-        }
-        // If value is unset or empty, and defaultValue provided, use defaultValue
-        if (value.empty() && !defaultValue.empty()) {
-            value = defaultValue;
-        }
-        
-        result.replace(pos, endPos - pos, value);
-        pos += value.length();
+
+    ParsedPlaceholder placeholder;
+    size_t searchPos = 0;
+    while (parseNextPlaceholder(result, searchPos, placeholder)) {
+        const std::string value = resolveScalarPlaceholderValue(
+            placeholder.varName, placeholder.defaultValue, params);
+        result.replace(placeholder.pos, placeholder.endPos - placeholder.pos, value);
+        searchPos = placeholder.pos + value.length();
     }
-    
+
     return result;
+}
+
+std::vector<std::string> replacePlaceholdersExpanded(const std::string& cmd,
+                                                     const std::map<std::string, std::string>& params) {
+    std::vector<std::string> expandedLines = {""};
+
+    size_t cursor = 0;
+    ParsedPlaceholder placeholder;
+    while (parseNextPlaceholder(cmd, cursor, placeholder)) {
+        const std::string literal = cmd.substr(cursor, placeholder.pos - cursor);
+        for (auto& line : expandedLines) {
+            line += literal;
+        }
+
+        std::string baseName;
+        if (isListVariableName(placeholder.varName, &baseName)) {
+            std::vector<std::string> values = collectListValues(params, baseName);
+            if (values.empty() && !placeholder.defaultValue.empty()) {
+                values = parseListLiteral(placeholder.defaultValue);
+            }
+
+            if (values.empty()) {
+                return {};
+            }
+
+            std::vector<std::string> nextLines;
+            nextLines.reserve(expandedLines.size() * values.size());
+            for (const auto& prefix : expandedLines) {
+                for (const auto& value : values) {
+                    nextLines.push_back(prefix + value);
+                }
+            }
+            expandedLines.swap(nextLines);
+        } else {
+            const std::string replacement = resolveScalarPlaceholderValue(
+                placeholder.varName, placeholder.defaultValue, params);
+            for (auto& line : expandedLines) {
+                line += replacement;
+            }
+        }
+
+        cursor = placeholder.endPos;
+    }
+
+    const std::string tail = cmd.substr(cursor);
+    for (auto& line : expandedLines) {
+        line += tail;
+    }
+
+    return expandedLines;
 }

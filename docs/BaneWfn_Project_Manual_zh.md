@@ -4,10 +4,12 @@
 \vspace*{1.2cm}
 \includegraphics[width=0.40\textwidth]{icon.png}\par
 \vspace{0.8cm}
-{\Huge\bfseries BaneWfn: Multiwfn工作流调度程序\par}
+{\Huge\bfseries BaneWfn\par}
 \vspace{0.4cm}
-{\normalsize 模块化、可复用、可批量的分析脚本体系\par}
-\vspace{2.2cm}
+{\normalsize Multiwfn工作流调度程序\par}
+\vspace{1cm}
+{\normalsize \url{https://bane-dysta.top/software/banewfn}\par}
+\vspace{1.2cm}
 \begin{tabular}{rl}
 version： & 1.3 \\
 \end{tabular}
@@ -80,7 +82,7 @@ BaneWfn 的价值不在于增加新的计算功能，而在于把已有分析能
 当前版本的循环顺序可概括如下：
 
 1. 先展开 `wfn=` 或 `-w` 指定的文件列表。
-2. 再基于数组变量生成变量组合；如果有多个数组变量，则先求笛卡尔积。
+2. 再基于数组变量生成变量组合；如果有多个数组变量，则先求笛卡尔积。(注意，使用多组数组变量会使得计算的任务数激增！)
 3. 对于每一个“文件 × 变量组合”，都从头到尾执行整份输入文件中的任务序列。
 
 例如，当前目录下存在 `m1.fchk` 和 `m2.fchk`，输入文件为：
@@ -92,10 +94,13 @@ state=(1 2)
 state ${state}
 %process
 cub
+%command
+mv hole.cub ${input}_${state}_hole.cub
+mv electron.cub ${input}_${state}_ele.cub
 end
 ```
 
-那么执行顺序将是：先对 `m1.fchk` 执行 `state=1` 和 `state=2` 两轮，再对 `m2.fchk` 执行 `state=1` 和 `state=2` 两轮。换言之，实际顺序为 `m1/state=1 -> m1/state=2 -> m2/state=1 -> m2/state=2`，而不是先把所有文件跑完 `state=1` 再统一切换到 `state=2`。
+那么执行顺序将是：先对 `m1.fchk` 执行 `state=1` 和 `state=2` 两轮空穴电子分析，再对 `m2.fchk` 执行 `state=1` 和 `state=2` 两轮空穴电子分析。换言之，实际顺序为 `m1/state=1 -> m1/state=2 -> m2/state=1 -> m2/state=2`。
 
 # 构建、安装与运行依赖
 
@@ -226,8 +231,8 @@ cores=8
 `banewfn.rc` 与 `.conf` 共享同一套注释和路径展开规则：
 
 - 引号外的 `#` 视为注释起始符；
-- 单引号或双引号内部的 `#` 会保留为字面字符；
-- 在引号外写 `\#` 可以保留字面 `#`；
+- 单引号或双引号内部的 `#` 会保留为字面字符，尽管路径里不会有#号。
+- 在引号外写 `\#` 可以保留字面 `#`，能在banewfn.rc里用到这个的也是属于神人了。
 - `~`、`$HOME` 和 `${HOME}` 会在配置读取时展开为用户主目录。
 
 ## 配置文件
@@ -352,15 +357,12 @@ wfn_rebase=next.fchk
 | --- | --- |
 | `wfn=<path-or-pattern>` | 当前脚本默认的波函数文件或通配符模式。 |
 | `core=<N>` | 当前脚本默认核心数。 |
-| `dryrun=<bool>` | 设为真时启用干运行。 |
-| `nogui=<bool>` | 设为真时向 Multiwfn 追加 `-silent`。 |
+| `dryrun=<bool>` | 设为真时启用测试运行。 |
+| `nogui=<bool>` | 设为真时向 Multiwfn 启动命令追加 `-silent`。 |
 
-其中，`wfn_rebase=<path>` 比较特殊。它不是单纯的“文件头配置”，而是一个可以出现在块间的流程指令，用于临时切换后续块使用的输入文件。与 `wfn` 不同，`wfn_rebase` 不支持通配符。
+其中，`wfn_rebase=<path>` 比较特殊。它不是单纯的文件头配置，而是一个可以出现在块间的流程指令，用于临时切换后续块使用的输入文件。
 
-布尔值的真值与假值规则如下：
-
-- 真值：`on`、`true`、`yes`、`1`
-- 假值：`off`、`false`、`flase`、`no`、`0`
+Note: 与 `wfn` 不同，`wfn_rebase` 不支持通配符。
 
 除保留项外，块外的其他 `key=value` 会被解析为自定义变量。例如：
 
@@ -387,7 +389,7 @@ state=(1 2 3 4)
 
 它的行为可以概括为：程序会把同一脚本重复执行多次，每次取数组中的一个元素；如果存在多个数组变量，则先计算这些数组的笛卡尔积，再对每个组合执行整套任务序列。
 
-需要注意的是，数组元素可以带成对引号，解析后会去除元素级外层引号。因此，当元素本身不含空格时，通常不必额外加引号；只有在你明确需要保留某些特殊字符或 shell 风格写法时，才需要这样做。
+需要注意的是，数组元素可以带成对引号，解析后会去除元素级外层引号。当元素本身不含空格时，通常不必额外加引号；只有在你明确需要保留某些特殊字符或 shell 风格写法时，才需要这样做。
 
 ### 交互式变量
 

@@ -22,6 +22,28 @@ TEST_CASE("getBaseName and replacePlaceholders follow the documented rules") {
           == "run orb 200 2 7 ");
 }
 
+TEST_CASE("replacePlaceholdersExpanded supports var* aggregation and len(var)") {
+    const std::map<std::string, std::string> indexedParams = {
+        {"frag2", "5"},
+        {"frag1", "2"},
+        {"frag3", "9"}
+    };
+
+    const std::vector<std::string> expectedIndexed = {"2", "5", "9"};
+    CHECK(replacePlaceholdersExpanded("${frag*}", indexedParams) == expectedIndexed);
+    CHECK(replacePlaceholders("count=${len(frag)}", indexedParams) == "count=3");
+
+    const std::map<std::string, std::string> directParams = {
+        {"frag*", "(7 8)"}
+    };
+    const std::vector<std::string> expectedDirect = {"item 7", "item 8"};
+    CHECK(replacePlaceholdersExpanded("item ${frag*}", directParams) == expectedDirect);
+    CHECK(replacePlaceholders("${len(frag)}", directParams) == "2");
+
+    const std::vector<std::string> expectedDefault = {"1", "4"};
+    CHECK(replacePlaceholdersExpanded("${frag*:- (1 4)}", {}) == expectedDefault);
+}
+
 TEST_CASE("loadBaneWfnConfig parses rc values and expands HOME references") {
     TempDir temp;
     EnvVarGuard homeGuard("HOME", temp.path().string());

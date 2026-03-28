@@ -41,6 +41,8 @@ std::string findConfigFile(const std::string& executablePath);
 std::string getBaseName(const std::string& filepath);
 std::string replacePlaceholders(const std::string& cmd, 
                                const std::map<std::string, std::string>& params);
+std::vector<std::string> replacePlaceholdersExpanded(const std::string& cmd,
+                                                    const std::map<std::string, std::string>& params);
 
 // Configuration manager class
 class ConfigManager {

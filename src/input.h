@@ -49,6 +49,8 @@ public:
     static std::tuple<std::vector<ModuleTask>, std::string, int,
                       std::map<std::string, std::vector<std::string>>, bool, bool>
     parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile);
+    // Resolve interactive custom variables, including special var* / len(var) prompts.
+    static void resolveInteractiveCustomVars(std::map<std::string, std::vector<std::string>>& customVars);
     // Apply placeholder replacement to all tasks using wavefunction filename and custom variables
     static void applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, const std::string& wfnFile, const std::map<std::string, std::vector<std::string>>& customVars = std::map<std::string, std::vector<std::string>>());
     

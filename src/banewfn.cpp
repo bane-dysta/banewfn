@@ -32,6 +32,32 @@ std::vector<std::string> split(const std::string& str, char delimiter) {
     return Utils::split(str, delimiter);
 }
 
+static bool isPlainCustomVarName(const std::string& name) {
+    if (name.empty()) {
+        return false;
+    }
+
+    for (char c : name) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool isValidCustomVarName(const std::string& name) {
+    if (isPlainCustomVarName(name)) {
+        return true;
+    }
+
+    if (name.size() > 1 && name.back() == '*') {
+        return isPlainCustomVarName(name.substr(0, name.size() - 1));
+    }
+
+    return name.size() > 5 && name.rfind("len(", 0) == 0 && name.back() == ')' &&
+           isPlainCustomVarName(name.substr(4, name.size() - 5));
+}
+
 // Replace only the specified placeholder variable in a string.
 // Supported forms: $var, ${var}, ${var:-default}
 // Any other placeholders are left untouched.
@@ -215,7 +241,8 @@ public:
         
         // Generate commands
         for (const auto& cmd : section.commands) {
-            result.push_back(replacePlaceholders(cmd, finalParams));
+            auto expanded = replacePlaceholdersExpanded(cmd, finalParams);
+            result.insert(result.end(), expanded.begin(), expanded.end());
         }
         
         return result;
@@ -770,32 +797,11 @@ public:
         // Interactive variables: allow defining "var=?" at the top of input file
         // (or via -v/--var var=?) to request the value from user at runtime.
         //
-        // Notes:
-        // - Only scalar "?" triggers prompting (matching the requested "var=?" syntax).
-        // - User can input a single value or a bash-array like: (a b c)
-        //   to turn this variable into an array for iteration.
-        auto promptInteractiveVars = [](std::map<std::string, std::vector<std::string>>& vars) {
-            for (auto& kv : vars) {
-                const std::string& key = kv.first;
-                std::vector<std::string>& values = kv.second;
-
-                if (values.size() == 1 && Utils::trim(values[0]) == "?") {
-                    std::string prompt = "Bane need value for variable '" + key +
-                                         "' (supports bash array like (a b c), empty for blank): ";
-                    std::string userInput = UI::getUserInput(prompt);
-                    userInput = Utils::trim(userInput);
-
-                    // Allow user to provide bash array syntax interactively.
-                    values = Utils::parseBashArray(userInput);
-
-                    // For single value, also trim surrounding quotes.
-                    if (values.size() == 1) {
-                        values[0] = Utils::trimQuotes(values[0]);
-                    }
-                }
-            }
-        };
-        promptInteractiveVars(allCustomVars);
+        // Special handling:
+        // - var*=?      -> collect var1, var2, ... and later expand ${var*} as multiple lines.
+        // - len(var)=?  -> if paired with var*=?, prompt this count first and then ask exactly
+        //                  that many varN values. Otherwise it behaves like a normal scalar prompt.
+        InputParser::resolveInteractiveCustomVars(allCustomVars);
         
         // Collect array variables and expand them as a Cartesian product.
         std::vector<std::string> arrayVarNames;
@@ -1160,18 +1166,15 @@ int main(int argc, char* argv[]) {
                     std::string key = Utils::trim(varArg.substr(0, eqPos));
                     std::string value = Utils::trim(varArg.substr(eqPos + 1));
                     
-                    // Validate key name (alphanumeric and underscore only)
-                    bool validKey = true;
-                    for (char c : key) {
-                        if (!isalnum(c) && c != '_') {
-                            validKey = false;
-                            break;
+                    if (isValidCustomVarName(key) && !key.empty()) {
+                        if (key.size() > 1 && key.back() == '*') {
+                            options.customVars[key] = {value};
+                        } else if (key.size() > 5 && key.rfind("len(", 0) == 0 && key.back() == ')') {
+                            options.customVars[key] = {value};
+                        } else {
+                            // Parse value as bash array (supports both array and single value)
+                            options.customVars[key] = Utils::parseBashArray(value);
                         }
-                    }
-                    
-                    if (validKey && !key.empty()) {
-                        // Parse value as bash array (supports both array and single value)
-                        options.customVars[key] = Utils::parseBashArray(value);
                     } else {
                         std::cerr << "Warning: Invalid variable name: " << key << std::endl;
                     }

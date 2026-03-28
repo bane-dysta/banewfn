@@ -6,8 +6,17 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 
 namespace {
+
+struct ParsedPlaceholder {
+    size_t pos;
+    size_t endPos;
+    std::string varName;
+    std::string defaultValue;
+    bool usedBraces;
+};
 
 std::string toLowerAscii(const std::string& text) {
     std::string result = text;
@@ -34,6 +43,342 @@ bool tryParseInputBoolFlag(const std::string& rawValue, const std::string& flagN
     return false;
 }
 
+bool parseNextPlaceholder(const std::string& text, size_t startPos, ParsedPlaceholder& out) {
+    const size_t pos = text.find('$', startPos);
+    if (pos == std::string::npos) {
+        return false;
+    }
+
+    size_t endPos = pos + 1;
+    out.pos = pos;
+    out.defaultValue.clear();
+    out.varName.clear();
+    out.usedBraces = false;
+
+    if (endPos < text.length() && text[endPos] == '{') {
+        const size_t braceStart = endPos + 1;
+        const size_t braceEnd = text.find('}', braceStart);
+        if (braceEnd != std::string::npos) {
+            const std::string inside = text.substr(braceStart, braceEnd - braceStart);
+            const size_t defaultSep = inside.find(":-");
+            if (defaultSep != std::string::npos) {
+                out.varName = inside.substr(0, defaultSep);
+                out.defaultValue = inside.substr(defaultSep + 2);
+            } else {
+                out.varName = inside;
+            }
+            out.endPos = braceEnd + 1;
+            out.usedBraces = true;
+            return true;
+        }
+    }
+
+    while (endPos < text.length() &&
+           (std::isalnum(static_cast<unsigned char>(text[endPos])) || text[endPos] == '_')) {
+        endPos++;
+    }
+    out.varName = text.substr(pos + 1, endPos - pos - 1);
+    out.endPos = endPos;
+    return true;
+}
+
+bool isPlainVariableName(const std::string& name) {
+    if (name.empty()) {
+        return false;
+    }
+
+    for (char c : name) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool isListVariableName(const std::string& name, std::string* baseName = nullptr) {
+    if (name.size() <= 1 || name.back() != '*') {
+        return false;
+    }
+
+    const std::string base = name.substr(0, name.size() - 1);
+    if (!isPlainVariableName(base)) {
+        return false;
+    }
+
+    if (baseName != nullptr) {
+        *baseName = base;
+    }
+    return true;
+}
+
+bool isLenVariableName(const std::string& name, std::string* baseName = nullptr) {
+    if (name.size() <= 5 || name.rfind("len(", 0) != 0 || name.back() != ')') {
+        return false;
+    }
+
+    const std::string base = name.substr(4, name.size() - 5);
+    if (!isPlainVariableName(base)) {
+        return false;
+    }
+
+    if (baseName != nullptr) {
+        *baseName = base;
+    }
+    return true;
+}
+
+bool parseIndexedVariableName(const std::string& name, std::string* baseName, int* index) {
+    size_t splitPos = name.size();
+    while (splitPos > 0 && std::isdigit(static_cast<unsigned char>(name[splitPos - 1]))) {
+        splitPos--;
+    }
+
+    if (splitPos == 0 || splitPos == name.size()) {
+        return false;
+    }
+
+    const std::string base = name.substr(0, splitPos);
+    const std::string indexText = name.substr(splitPos);
+    if (!isPlainVariableName(base) || indexText.empty()) {
+        return false;
+    }
+
+    const int parsedIndex = std::atoi(indexText.c_str());
+    if (parsedIndex <= 0) {
+        return false;
+    }
+
+    if (baseName != nullptr) {
+        *baseName = base;
+    }
+    if (index != nullptr) {
+        *index = parsedIndex;
+    }
+    return true;
+}
+
+bool isValidCustomVarName(const std::string& key) {
+    return isPlainVariableName(key) || isListVariableName(key) || isLenVariableName(key);
+}
+
+bool isInteractiveMarker(const std::vector<std::string>& values) {
+    return values.size() == 1 && Utils::trim(values[0]) == "?";
+}
+
+std::vector<std::string> parseListLiteral(const std::string& rawValue) {
+    const std::string trimmedValue = Utils::trim(rawValue);
+    if (trimmedValue.empty()) {
+        return {};
+    }
+    return Utils::parseBashArray(trimmedValue);
+}
+
+std::vector<std::string> parseStoredListValues(const std::vector<std::string>& values) {
+    if (values.empty()) {
+        return {};
+    }
+
+    if (values.size() == 1) {
+        return parseListLiteral(values.front());
+    }
+
+    return values;
+}
+
+std::string serializeListValues(const std::vector<std::string>& values) {
+    if (values.empty()) {
+        return "";
+    }
+
+    if (values.size() == 1) {
+        return values.front();
+    }
+
+    std::string result = "(";
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            result += " ";
+        }
+        if (values[i].empty()) {
+            result += "\"\"";
+        } else {
+            result += values[i];
+        }
+    }
+    result += ")";
+    return result;
+}
+
+std::vector<std::string> collectListValues(const std::map<std::string, std::vector<std::string>>& vars,
+                                           const std::string& baseName) {
+    const auto directIt = vars.find(baseName + "*");
+    if (directIt != vars.end()) {
+        const std::vector<std::string> directValues = parseStoredListValues(directIt->second);
+        if (!directValues.empty()) {
+            return directValues;
+        }
+    }
+
+    std::vector<std::pair<int, std::string>> indexedValues;
+    for (const auto& kv : vars) {
+        std::string indexedBase;
+        int index = 0;
+        if (parseIndexedVariableName(kv.first, &indexedBase, &index) && indexedBase == baseName) {
+            const std::string value = kv.second.empty() ? std::string("") : kv.second.front();
+            indexedValues.push_back({index, value});
+        }
+    }
+
+    std::sort(indexedValues.begin(), indexedValues.end(),
+              [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+
+    std::vector<std::string> values;
+    for (const auto& item : indexedValues) {
+        values.push_back(item.second);
+    }
+    return values;
+}
+
+std::string makeLenKey(const std::string& baseName) {
+    return "len(" + baseName + ")";
+}
+
+void clearIndexedValues(std::map<std::string, std::vector<std::string>>& vars, const std::string& baseName) {
+    std::vector<std::string> keysToErase;
+    for (const auto& kv : vars) {
+        std::string indexedBase;
+        int index = 0;
+        if (parseIndexedVariableName(kv.first, &indexedBase, &index) && indexedBase == baseName) {
+            keysToErase.push_back(kv.first);
+        }
+    }
+
+    for (const auto& key : keysToErase) {
+        vars.erase(key);
+    }
+}
+
+void materializeListVariable(std::map<std::string, std::vector<std::string>>& vars,
+                             const std::string& listKey,
+                             const std::vector<std::string>& values,
+                             bool updateLenWhenMissingOnly) {
+    std::string baseName;
+    if (!isListVariableName(listKey, &baseName)) {
+        return;
+    }
+
+    vars[listKey] = {serializeListValues(values)};
+    clearIndexedValues(vars, baseName);
+    for (size_t i = 0; i < values.size(); ++i) {
+        vars[baseName + std::to_string(i + 1)] = {values[i]};
+    }
+
+    const std::string lenKey = makeLenKey(baseName);
+    const auto lenIt = vars.find(lenKey);
+    if (lenIt == vars.end() || !updateLenWhenMissingOnly || isInteractiveMarker(lenIt->second) ||
+        lenIt->second.empty() || Utils::trim(lenIt->second.front()).empty()) {
+        vars[lenKey] = {std::to_string(values.size())};
+    }
+}
+
+void materializeAllListVariables(std::map<std::string, std::vector<std::string>>& vars) {
+    std::vector<std::string> listKeys;
+    for (const auto& kv : vars) {
+        if (isListVariableName(kv.first) && !isInteractiveMarker(kv.second)) {
+            listKeys.push_back(kv.first);
+        }
+    }
+
+    for (const auto& listKey : listKeys) {
+        const auto it = vars.find(listKey);
+        if (it == vars.end()) {
+            continue;
+        }
+        materializeListVariable(vars, listKey, parseStoredListValues(it->second), true);
+    }
+}
+
+bool tryParseNonNegativeInteger(const std::string& text, int& value) {
+    const std::string trimmedText = Utils::trim(text);
+    if (trimmedText.empty()) {
+        value = 0;
+        return true;
+    }
+
+    for (char c : trimmedText) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+
+    value = std::atoi(trimmedText.c_str());
+    return value >= 0;
+}
+
+struct InputPlaceholderResolution {
+    bool found;
+    std::string value;
+};
+
+InputPlaceholderResolution resolveInputScalarPlaceholder(const std::string& varName,
+                                                         const std::string& defaultValue,
+                                                         bool usedBraces,
+                                                         const std::string& wfnFile,
+                                                         const std::map<std::string, std::vector<std::string>>& customVars) {
+    if (varName == "output") {
+        return {false, ""};
+    }
+
+    const auto customIt = customVars.find(varName);
+    if (customIt != customVars.end() && !customIt->second.empty()) {
+        if (isListVariableName(varName)) {
+            return {true, serializeListValues(collectListValues(customVars, varName.substr(0, varName.size() - 1)))};
+        }
+        return {true, customIt->second.front()};
+    }
+
+    std::string baseName;
+    if (isLenVariableName(varName, &baseName)) {
+        const std::vector<std::string> values = collectListValues(customVars, baseName);
+        if (!values.empty()) {
+            return {true, std::to_string(values.size())};
+        }
+    }
+
+    if (isListVariableName(varName, &baseName)) {
+        const std::vector<std::string> values = collectListValues(customVars, baseName);
+        if (!values.empty()) {
+            return {true, serializeListValues(values)};
+        }
+    }
+
+    if (varName == "wfn") {
+        return {true, wfnFile};
+    }
+
+    if (varName == "input") {
+        return {true, getBaseName(wfnFile)};
+    }
+
+    if (usedBraces && Utils::fileExists(varName)) {
+        std::ifstream f(varName);
+        if (f.good()) {
+            std::stringstream buffer;
+            buffer << f.rdbuf();
+            return {true, Utils::trim(buffer.str())};
+        }
+    }
+
+    if (!defaultValue.empty()) {
+        if (isListVariableName(varName)) {
+            return {true, serializeListValues(parseListLiteral(defaultValue))};
+        }
+        return {true, defaultValue};
+    }
+
+    return {false, ""};
+}
+
 } // namespace
 
 // Utility function: split string (deprecated - use Utils::split instead)
@@ -47,95 +392,77 @@ std::vector<std::string> InputParser::split(const std::string& str, char delimit
 // For array variables, use the first element for replacement
 std::string InputParser::replaceInputPlaceholders(const std::string& text, const std::string& wfnFile, const std::map<std::string, std::vector<std::string>>& customVars) {
     std::string result = text;
-    
-    // Extract filename without extension from wavefunction file path
-    std::string wfnBaseName = getBaseName(wfnFile);
-    
-    size_t pos = 0;
-    while ((pos = result.find('$', pos)) != std::string::npos) {
-        size_t endPos = pos + 1;
-        std::string varName;
-        bool usedBraces = false;
-        
-        // Check for ${input} syntax
-        if (endPos < result.length() && result[endPos] == '{') {
-            size_t braceStart = endPos + 1;
-            size_t braceEnd = result.find('}', braceStart);
-            if (braceEnd != std::string::npos) {
-                varName = result.substr(braceStart, braceEnd - braceStart);
-                endPos = braceEnd + 1;
-                usedBraces = true;
-            } else {
-                // No closing brace found, treat as regular $variable
-                while (endPos < result.length() && 
-                       (isalnum(result[endPos]) || result[endPos] == '_')) {
-                    endPos++;
-                }
-                varName = result.substr(pos + 1, endPos - pos - 1);
-            }
-        } else {
-            // Regular $variable syntax
-            while (endPos < result.length() && 
-                   (isalnum(result[endPos]) || result[endPos] == '_')) {
-                endPos++;
-            }
-            varName = result.substr(pos + 1, endPos - pos - 1);
-        }
-        
-        std::string replacement;
-        bool found = false;
 
-        // NOTE: ${output} is a reserved placeholder that will be replaced at
-        // execution time with the current block's Multiwfn output file.
-        // We MUST NOT resolve it here (including from customVars or file-based
-        // ${name} substitution), otherwise it cannot reflect wfn_rebase/screen/wait.
-        if (varName == "output") {
-            found = false;
-        }
-        
-        // Priority 1: Check custom variables from command line or file header
-        if (varName != "output") {
-            auto customIt = customVars.find(varName);
-            if (customIt != customVars.end() && !customIt->second.empty()) {
-                // For array variables, use the first element
-                replacement = customIt->second[0];
-                found = true;
-            }
-        }
-        // Priority 2: Check if the variable name is "wfn" (full wavefunction file path)
-        if (!found && varName == "wfn") {
-            replacement = wfnFile;
-            found = true;
-        }
-        // Priority 2: Check if the variable name is "input"
-        else if (!found && varName == "input") {
-            replacement = wfnBaseName;
-            found = true;
-        }
-        // Priority 3: For ${name} (braced) and name != input/output, attempt file-based replacement
-        else if (!found && usedBraces && varName != "output") {
-            // Read file named exactly as varName from current working directory
-            if (Utils::fileExists(varName)) {
-                std::ifstream f(varName);
-                if (f.good()) {
-                    std::stringstream buffer;
-                    buffer << f.rdbuf();
-                    replacement = Utils::trim(buffer.str());
-                    found = true;
-                }
-            }
-        }
-        
-        if (found) {
-            result.replace(pos, endPos - pos, replacement);
-            pos += replacement.length();
+    ParsedPlaceholder placeholder;
+    size_t searchPos = 0;
+    while (parseNextPlaceholder(result, searchPos, placeholder)) {
+        const auto resolved = resolveInputScalarPlaceholder(
+            placeholder.varName, placeholder.defaultValue, placeholder.usedBraces, wfnFile, customVars);
+
+        if (resolved.found) {
+            result.replace(placeholder.pos, placeholder.endPos - placeholder.pos, resolved.value);
+            searchPos = placeholder.pos + resolved.value.length();
         } else {
-            // If no replacement found, skip this placeholder
-            pos = endPos;
+            searchPos = placeholder.endPos;
         }
     }
-    
+
     return result;
+}
+
+static std::vector<std::string> replaceInputPlaceholdersExpanded(
+    const std::string& text,
+    const std::string& wfnFile,
+    const std::map<std::string, std::vector<std::string>>& customVars) {
+    std::vector<std::string> expandedLines = {""};
+
+    size_t cursor = 0;
+    ParsedPlaceholder placeholder;
+    while (parseNextPlaceholder(text, cursor, placeholder)) {
+        const std::string literal = text.substr(cursor, placeholder.pos - cursor);
+        for (auto& line : expandedLines) {
+            line += literal;
+        }
+
+        std::string baseName;
+        if (isListVariableName(placeholder.varName, &baseName)) {
+            std::vector<std::string> values = collectListValues(customVars, baseName);
+            if (values.empty() && !placeholder.defaultValue.empty()) {
+                values = parseListLiteral(placeholder.defaultValue);
+            }
+
+            if (values.empty()) {
+                return {};
+            }
+
+            std::vector<std::string> nextLines;
+            nextLines.reserve(expandedLines.size() * values.size());
+            for (const auto& prefix : expandedLines) {
+                for (const auto& value : values) {
+                    nextLines.push_back(prefix + value);
+                }
+            }
+            expandedLines.swap(nextLines);
+        } else {
+            const auto resolved = resolveInputScalarPlaceholder(
+                placeholder.varName, placeholder.defaultValue, placeholder.usedBraces, wfnFile, customVars);
+            const std::string replacement = resolved.found
+                ? resolved.value
+                : text.substr(placeholder.pos, placeholder.endPos - placeholder.pos);
+            for (auto& line : expandedLines) {
+                line += replacement;
+            }
+        }
+
+        cursor = placeholder.endPos;
+    }
+
+    const std::string tail = text.substr(cursor);
+    for (auto& line : expandedLines) {
+        line += tail;
+    }
+
+    return expandedLines;
 }
 
 // Apply placeholder replacement to all tasks using wavefunction filename and custom variables
@@ -159,15 +486,130 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
         }
 
         // Apply replacement to raw Multiwfn commands
-        for (auto& rawCommand : task.rawCommands) {
-            rawCommand = replaceInputPlaceholders(rawCommand, wfnFile, customVars);
+        std::vector<std::string> expandedRawCommands;
+        for (const auto& rawCommand : task.rawCommands) {
+            const auto expandedLines = replaceInputPlaceholdersExpanded(rawCommand, wfnFile, customVars);
+            expandedRawCommands.insert(expandedRawCommands.end(), expandedLines.begin(), expandedLines.end());
         }
+        task.rawCommands.swap(expandedRawCommands);
         
         // Apply replacement to commands
         for (auto& command : task.commands) {
             command = replaceInputPlaceholders(command, wfnFile, customVars);
         }
     }
+}
+
+void InputParser::resolveInteractiveCustomVars(std::map<std::string, std::vector<std::string>>& customVars) {
+    std::vector<std::string> interactiveListKeys;
+    for (const auto& kv : customVars) {
+        if (isListVariableName(kv.first) && isInteractiveMarker(kv.second)) {
+            interactiveListKeys.push_back(kv.first);
+        }
+    }
+
+    for (const auto& listKey : interactiveListKeys) {
+        std::string baseName;
+        if (!isListVariableName(listKey, &baseName)) {
+            continue;
+        }
+
+        const std::string lenKey = makeLenKey(baseName);
+        int requestedCount = -1;
+
+        auto lenIt = customVars.find(lenKey);
+        if (lenIt != customVars.end()) {
+            if (isInteractiveMarker(lenIt->second)) {
+                while (true) {
+                    std::cout << "Bane need count for variable list '" << baseName
+                              << "' (" << lenKey << ", empty for 0): ";
+                    std::string lenInput;
+                    std::getline(std::cin, lenInput);
+
+                    int parsedCount = 0;
+                    if (tryParseNonNegativeInteger(lenInput, parsedCount)) {
+                        requestedCount = parsedCount;
+                        lenIt->second = {std::to_string(parsedCount)};
+                        break;
+                    }
+
+                    std::cout << "Warning: Invalid " << lenKey
+                              << " value, please enter a non-negative integer." << std::endl;
+                }
+            } else if (!lenIt->second.empty()) {
+                int parsedCount = 0;
+                if (tryParseNonNegativeInteger(lenIt->second.front(), parsedCount)) {
+                    requestedCount = parsedCount;
+                } else {
+                    std::cerr << "Warning: Invalid " << lenKey << " value: "
+                              << lenIt->second.front()
+                              << ". Falling back to blank-terminated collection for " << listKey
+                              << std::endl;
+                }
+            }
+        }
+
+        std::vector<std::string> values;
+        if (requestedCount >= 0) {
+            values.reserve(static_cast<size_t>(requestedCount));
+            for (int i = 1; i <= requestedCount; ++i) {
+                std::cout << "Bane need value for variable '" << baseName << i << "': ";
+                std::string userInput;
+                std::getline(std::cin, userInput);
+                values.push_back(Utils::trimQuotes(Utils::trim(userInput)));
+            }
+        } else {
+            for (int i = 1;; ++i) {
+                std::cout << "Bane need value for variable '" << baseName << i
+                          << "' (empty to finish): ";
+                std::string userInput;
+                std::getline(std::cin, userInput);
+                const std::string cleanedValue = Utils::trimQuotes(Utils::trim(userInput));
+                if (cleanedValue.empty()) {
+                    break;
+                }
+                values.push_back(cleanedValue);
+            }
+        }
+
+        materializeListVariable(customVars, listKey, values, false);
+    }
+
+    for (auto& kv : customVars) {
+        if (!isInteractiveMarker(kv.second)) {
+            continue;
+        }
+        if (isListVariableName(kv.first)) {
+            continue;
+        }
+
+        std::cout << "Bane need value for variable '" << kv.first;
+        if (isLenVariableName(kv.first)) {
+            std::cout << "' (non-negative integer, empty for 0): ";
+            while (true) {
+                std::string userInput;
+                std::getline(std::cin, userInput);
+                int parsedCount = 0;
+                if (tryParseNonNegativeInteger(userInput, parsedCount)) {
+                    kv.second = {std::to_string(parsedCount)};
+                    break;
+                }
+                std::cout << "Warning: Invalid " << kv.first
+                          << " value, please enter a non-negative integer: ";
+            }
+        } else {
+            std::cout << "' (supports bash array like (a b c), empty for blank): ";
+            std::string userInput;
+            std::getline(std::cin, userInput);
+            userInput = Utils::trim(userInput);
+            kv.second = Utils::parseBashArray(userInput);
+            if (kv.second.size() == 1) {
+                kv.second[0] = Utils::trimQuotes(kv.second[0]);
+            }
+        }
+    }
+
+    materializeAllListVariables(customVars);
 }
 
 // Parse inp file, return all module tasks, optional wfn file, core count, custom variables, and header execution flags
@@ -329,20 +771,17 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
                 std::string key = Utils::trim(trimmed.substr(0, eqPos));
                 std::string value = Utils::trim(trimmed.substr(eqPos + 1));
                 
-                // Validate key name (alphanumeric and underscore only)
-                bool validKey = true;
-                for (char c : key) {
-                    if (!isalnum(c) && c != '_') {
-                        validKey = false;
-                        break;
-                    }
-                }
-                
                 // Only accept if key is valid and not a special keyword
-                if (validKey && !key.empty() && key != "wfn" && key != "core" &&
+                if (isValidCustomVarName(key) && !key.empty() && key != "wfn" && key != "core" &&
                     key != "wfn_rebase" && key != "dryrun" && key != "nogui") {
-                    // Parse value as bash array (supports both array and single value)
-                    customVars[key] = Utils::parseBashArray(value);
+                    if (isListVariableName(key)) {
+                        customVars[key] = {value};
+                    } else if (isLenVariableName(key)) {
+                        customVars[key] = {value};
+                    } else {
+                        // Parse value as bash array (supports both array and single value)
+                        customVars[key] = Utils::parseBashArray(value);
+                    }
                     continue;
                 }
             }

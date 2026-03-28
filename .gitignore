@@ -15,3 +15,5 @@ examples
 scripts/*
 tar
 *.exe
+*.patch
+AI*.md
