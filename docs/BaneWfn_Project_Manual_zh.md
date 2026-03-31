@@ -4,15 +4,11 @@
 \vspace*{1.2cm}
 \includegraphics[width=0.40\textwidth]{icon.png}\par
 \vspace{0.8cm}
-{\Huge\bfseries BaneWfn\par}
-\vspace{0.4cm}
-{\normalsize Multiwfn工作流调度程序\par}
+{\Huge\bfseries BaneWfn v1.3\par}
 \vspace{1cm}
-{\normalsize \url{https://bane-dysta.top/software/banewfn}\par}
-\vspace{1.2cm}
-\begin{tabular}{rl}
-version： & 1.3 \\
-\end{tabular}
+{\normalsize Multiwfn工作流调度程序\par}
+\vspace{0.5cm}
+{\normalsize website: \url{https://bane-dysta.top/software/banewfn}\par}
 \vfill
 {\large Bane QC Project\par}
 \vspace*{1.1cm}
@@ -102,9 +98,11 @@ end
 
 那么执行顺序将是：先对 `m1.fchk` 执行 `state=1` 和 `state=2` 两轮空穴电子分析，再对 `m2.fchk` 执行 `state=1` 和 `state=2` 两轮空穴电子分析。换言之，实际顺序为 `m1/state=1 -> m1/state=2 -> m2/state=1 -> m2/state=2`。
 
-# 构建、安装与运行依赖
+# 安装与运行依赖
 
-## 构建依赖
+## 编译安装
+
+### 构建依赖
 
 构建 BaneWfn 只需要一个正常的 C++17 编译环境。通常来说，你需要准备以下条件：
 
@@ -112,7 +110,7 @@ end
 - CMake 3.10 或更高版本，或者 GNU Make 构建环境；
 - Linux 或 Windows 运行环境。
 
-## 运行时依赖
+### 运行时依赖
 
 BaneWfn 本身不实现 Multiwfn 中的分析算法，因此在运行阶段需要依赖外部程序和输入数据。一个可用的运行环境通常至少应满足以下条件：
 
@@ -120,7 +118,7 @@ BaneWfn 本身不实现 Multiwfn 中的分析算法，因此在运行阶段需�
 - 模块配置可以从 `confpath` 找到，或者已经以内嵌形式打包到输入文件末尾；
 - 如果 `%command` 中调用了额外工具，例如 shell、batch、Python、VMD、gnuplot 等，则这些工具也需要在目标环境中可用。
 
-## CMake 构建
+### CMake 构建
 
 如果你使用 CMake，推荐的构建方式如下：
 
@@ -139,7 +137,7 @@ cmake --build build -j
 
 对于大多数使用者来说，CMake 构建适合做跨平台开发、调试和测试，因为它对构建目录、测试开关和编译选项的组织更清晰。
 
-## Makefile 构建
+### Makefile 构建
 
 如果你更偏好直接使用 Makefile，也可以采用如下命令：
 
@@ -158,7 +156,7 @@ make both
 
 如果你的使用场景以本机部署为主，Makefile 通常足够直接；如果需要更细粒度地控制构建选项或集成 CI，CMake 会更合适。
 
-## 测试构建
+### 测试
 
 当你需要运行单元测试时，可以使用以下命令：
 
@@ -168,7 +166,8 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-在一个完整的安装流程中，通常会得到以下几类产物：
+## 预编译版安装
+请前往[软件主页](https://bane-dysta.top/software/banewfn)按照指引找到最新版下载方式。在一个完整的安装流程中，通常会得到以下几类产物：
 
 - 主程序 `banewfn`；
 - 打包工具 `bwpack`；
@@ -176,8 +175,6 @@ ctest --test-dir build --output-on-failure
 - 默认的 `banewfn.rc` 配置文件。
 
 # 运行时配置
-
-## 推荐配置目录布局
 
 为了降低项目维护成本，建议把运行配置和模块配置集中放在同一目录中。一个典型布局如下：
 
