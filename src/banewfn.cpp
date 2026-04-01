@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <unistd.h>
 #include <sys/stat.h>
 #include "config.h"
@@ -25,6 +26,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <io.h>
 #endif
 
 // Utility function: split string (deprecated - use Utils::split instead)
@@ -57,6 +59,81 @@ static bool isValidCustomVarName(const std::string& name) {
     return name.size() > 5 && name.rfind("len(", 0) == 0 && name.back() == ')' &&
            isPlainCustomVarName(name.substr(4, name.size() - 5));
 }
+
+namespace {
+
+struct TerminalColorState {
+    bool enabled = false;
+};
+
+TerminalColorState& terminalColorState() {
+    static TerminalColorState state;
+    return state;
+}
+
+bool isNonEmptyEnvEnabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0';
+}
+
+bool isStdStreamTerminal(FILE* stream) {
+#ifdef _WIN32
+    return _isatty(_fileno(stream)) != 0;
+#else
+    return isatty(fileno(stream)) != 0;
+#endif
+}
+
+#ifdef _WIN32
+void enableVirtualTerminalForHandle(DWORD stdHandleId) {
+    HANDLE handle = GetStdHandle(stdHandleId);
+    if (handle == INVALID_HANDLE_VALUE || handle == nullptr) {
+        return;
+    }
+
+    DWORD mode = 0;
+    if (!GetConsoleMode(handle, &mode)) {
+        return;
+    }
+
+    SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+}
+#endif
+
+void initializeColorOutput(const ExecutionOptions& options) {
+    bool enabled = !options.noColor && !isNonEmptyEnvEnabled("NO_COLOR");
+
+    // Disable colors whenever output is redirected, so logs/files stay clean.
+    if (enabled) {
+        enabled = isStdStreamTerminal(stdout) && isStdStreamTerminal(stderr);
+    }
+
+#ifdef _WIN32
+    if (enabled) {
+        enableVirtualTerminalForHandle(STD_OUTPUT_HANDLE);
+        enableVirtualTerminalForHandle(STD_ERROR_HANDLE);
+    }
+#endif
+
+    terminalColorState().enabled = enabled;
+}
+
+std::string colorizeText(const std::string& text, const char* ansiCode) {
+    if (!terminalColorState().enabled) {
+        return text;
+    }
+    return std::string(ansiCode) + text + "\033[0m";
+}
+
+void printSuccessLine(const std::string& text) {
+    std::cout << colorizeText(text, "\033[32m") << std::endl;
+}
+
+void printFailureLine(const std::string& text) {
+    std::cerr << colorizeText(text, "\033[31m") << std::endl;
+}
+
+} // namespace
 
 // Replace only the specified placeholder variable in a string.
 // Supported forms: $var, ${var}, ${var:-default}
@@ -378,11 +455,11 @@ public:
         }
         
         if (result == 0) {
-            std::cout << "Module " << task.moduleName << " execution completed." << std::endl;
+            printSuccessLine("Module " + task.moduleName + " execution completed.");
             return true;
         } else {
-            std::cerr << "Error: Module " << task.moduleName 
-                     << " execution failed with error code " << result << std::endl;
+            printFailureLine("Error: Module " + task.moduleName +
+                             " execution failed with error code " + std::to_string(result));
             return false;
         }
     }
@@ -487,11 +564,11 @@ public:
         int result = system(cmd.str().c_str());
         
         if (result == 0) {
-            std::cout << "\nModule " << task.moduleName << " session ended." << std::endl;
+            printSuccessLine("Module " + task.moduleName + " session ended.");
             return true;
         } else {
-            std::cerr << "Error: Module " << task.moduleName 
-                     << " execution failed with error code " << result << std::endl;
+            printFailureLine("Error: Module " + task.moduleName +
+                             " execution failed with error code " + std::to_string(result));
             return false;
         }
     }
@@ -691,10 +768,10 @@ public:
 #endif
         
         if (result == 0) {
-            std::cout << "Command block execution completed." << std::endl;
+            printSuccessLine("Command block execution completed.");
             return true;
         } else {
-            std::cerr << "Error: Command block execution failed with error code " << result << std::endl;
+            printFailureLine("Error: Command block execution failed with error code " + std::to_string(result));
             return false;
         }
     }
@@ -943,7 +1020,7 @@ public:
         if (allSuccess) {
             std::cout << "\nAll done." << std::endl;
         } else {
-            std::cerr << "\nSome modules execution failed" << std::endl;
+            printFailureLine("Some modules execution failed");
         }
         
         return allSuccess;
@@ -961,6 +1038,7 @@ void printUsage(const char* progName) {
     std::cout << "  -c, --cores <num>   Specify the number of CPU cores to use\n";
     std::cout << "  -d, --dryrun        Generate command files only, don't execute (skip wait tasks)\n";
     std::cout << "  -e, --extargs <args> Pass extra arguments to Multiwfn (use quotes for multiple args)\n";
+    std::cout << "      --no-color     Disable colored status output\n";
     std::cout << "  -s, --screen        Display output on screen instead of redirecting to files\n";
     std::cout << "  -n, --nogui         Run Multiwfn in silent mode\n";
     std::cout << "  -w, --wfn <file>    Specify wavefunction file (.fchk/.wfn or other supported file)\n";
@@ -1135,6 +1213,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "-d" || arg == "--dryrun") {
             options.dryrun = true;
+        } else if (arg == "--no-color") {
+            options.noColor = true;
         } else if (arg == "-s" || arg == "--screen") {
             options.screen = true;
         } else if (arg == "-n" || arg == "--nogui") {
@@ -1218,6 +1298,8 @@ int main(int argc, char* argv[]) {
         options.nogui = true;
         std::cout << "No-GUI mode enabled by input header." << std::endl;
     }
+
+    initializeColorOutput(options);
 
     bool shouldPauseOnExit = options.dryrun;
     

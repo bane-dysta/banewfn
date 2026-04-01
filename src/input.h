@@ -29,10 +29,11 @@ struct ExecutionOptions {
     bool dryrun;
     bool screen;
     bool nogui;
+    bool noColor;
     std::vector<std::string> extargs;  // Extra arguments to pass to Multiwfn
     std::map<std::string, std::vector<std::string>> customVars;  // Custom variables from command line (supports arrays)
 
-    ExecutionOptions() : dryrun(false), screen(false), nogui(false) {}
+    ExecutionOptions() : dryrun(false), screen(false), nogui(false), noColor(false) {}
 };
 
 // Input parser class
