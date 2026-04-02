@@ -6,7 +6,7 @@ banewfn
 *.out
 test
 tmp*.sh
-build
+/build/
 btask_wfn
 *.rc
 examples
@@ -17,3 +17,5 @@ tar
 *.exe
 *.patch
 AI*.md
+CMakeUserPresets.json
+/dist/

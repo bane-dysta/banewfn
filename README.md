@@ -43,6 +43,63 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## 发布
+
+项目现在提供了基于 `CMakePresets.json` + `CPack` 的发布流：
+
+```bash
+cmake --workflow --preset linux-release
+cmake --workflow --preset windows-release
+```
+
+输出位置：
+
+- Linux 自解压安装包：`dist/linux-release/`（`STGZ`，即 `.sh` 内嵌 `tar.gz`）
+- Windows 便携发布包：`dist/windows-release/`（`ZIP`）
+
+包内容包括：
+
+- `banewfn` / `banewfn.exe`
+- `bwpack` / `bwpack.exe`
+- `conf/`
+- `docs/out/` 下的 PDF 手册
+
+如果你的最新 `conf` 或手册不在仓库默认路径，而是在 Windows 侧单独维护，复制 `CMakeUserPresets.json.example` 为 `CMakeUserPresets.json`，然后把下面两个变量改成真实路径：
+
+- `BANEWFN_PACKAGE_CONF_SOURCE`
+- `BANEWFN_PACKAGE_DOC_SOURCE`
+
+例如在 WSL 中可写成 `/mnt/c/...` 路径，然后执行：
+
+```bash
+cmake --workflow --preset windows-release-local-assets
+cmake --workflow --preset linux-release-local-assets
+```
+
+这样二进制仍然从 WSL 构建，但打包时会读取你在 Windows 侧维护的最新 `conf`/手册，避免“二进制和资源文件不在同一边更新”的问题。
+
+如果你还想继续保留 Inno Setup 作为 Windows 安装器，建议不要再让 `.iss` 直接从仓库根目录抓文件，而是先把 Windows 发布内容 stage 成一个统一目录：
+
+```bash
+./scripts/release/stage_windows_release.sh
+# 或直接 stage 到 Windows 盘，方便 Inno Setup 读取
+./scripts/release/stage_windows_release.sh build/windows-release /mnt/d/banewfn-stage
+```
+
+默认会生成 `dist/windows-release/stage/`。如果你的仓库在 WSL 的 Linux 文件系统里，更推荐直接 stage 到 `/mnt/c/...` 或 `/mnt/d/...`，然后让 Inno Setup 只读取这个 stage 目录里的 `banewfn.exe`、`bwpack.exe`、`conf/` 和 `docs/out/`，这样 exe、配置和手册永远来自同一份发布树。
+
+Windows 交叉编译预设依赖 MinGW-w64，例如：
+
+```bash
+sudo apt install mingw-w64 ninja-build
+```
+
+如果需要更新手册 PDF，可先执行：
+
+```bash
+./docs/build.sh
+```
+
 ## 快速开始
 
 准备好 Multiwfn 后，先在运行目录或用户配置目录中放置 `banewfn.rc`。一个最小可用配置如下：
