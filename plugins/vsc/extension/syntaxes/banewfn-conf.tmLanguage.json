@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "BaneWfn Conf",
+  "scopeName": "source.bwconf",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#sections" },
+    { "include": "#defaults" },
+    { "include": "#variables" },
+    { "include": "#strings" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.bwconf",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "sections": {
+      "patterns": [
+        {
+          "name": "entity.name.section.bwconf",
+          "match": "^\\s*(\\[)([^\\]]+)(\\])",
+          "captures": {
+            "1": { "name": "punctuation.definition.tag.begin.bwconf" },
+            "2": { "name": "entity.name.tag.bwconf" },
+            "3": { "name": "punctuation.definition.tag.end.bwconf" }
+          }
+        }
+      ]
+    },
+    "defaults": {
+      "patterns": [
+        {
+          "begin": "^\\s*(default)\\s*(\\{)\\s*$",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.bwconf" },
+            "2": { "name": "punctuation.section.block.begin.bwconf" }
+          },
+          "end": "^\\s*(\\})\\s*$",
+          "endCaptures": {
+            "1": { "name": "punctuation.section.block.end.bwconf" }
+          },
+          "patterns": [
+            {
+              "match": "^\\s*([A-Za-z0-9_\\-\\+]+)\\s*=\\s*(.*)$",
+              "captures": {
+                "1": { "name": "variable.parameter.bwconf" },
+                "2": {
+                  "patterns": [
+                    { "include": "#variables" },
+                    { "include": "#strings" },
+                    { "name": "string.unquoted.bwconf", "match": ".*" }
+                  ]
+                }
+              }
+            },
+            { "include": "#comments" }
+          ]
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.bwconf",
+          "match": "\\$\\{[^\\}]+\\}|\\$[A-Za-z0-9_]+"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.bwconf",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.bwconf", "match": "\\\\." },
+            { "include": "#variables" }
+          ]
+        },
+        {
+          "name": "string.quoted.single.bwconf",
+          "begin": "'",
+          "end": "'"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "name": "banewfn-syntax",
+  "displayName": "BaneWfn Syntax",
+  "description": "Syntax highlighting and workflow tools for BaneWfn (.bw/.bwc), including run, bwpack, and related conf navigation.",
+  "version": "1.1.1",
+  "publisher": "bane-dysta",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:banewfn",
+    "onLanguage:banewfn-conf",
+    "onCommand:banewfn.runCurrent",
+    "onCommand:banewfn.packCurrent",
+    "onCommand:banewfn.openRelatedConf"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "banewfn",
+        "aliases": [
+          "BaneWfn",
+          "bw",
+          "bwc",
+          "bt",
+          "btc"
+        ],
+        "extensions": [
+          ".bw",
+          ".bwc"
+        ]
+      },
+      {
+        "id": "banewfn-conf",
+        "aliases": [
+          "BaneWfn Conf",
+          "banewfn-conf"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "banewfn",
+        "scopeName": "source.bw",
+        "path": "./syntaxes/banewfn.tmLanguage.json"
+      },
+      {
+        "language": "banewfn-conf",
+        "scopeName": "source.bwconf",
+        "path": "./syntaxes/banewfn-conf.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "banewfn.runCurrent",
+        "title": "BaneWfn: Run Current Script",
+        "icon": {
+          "light": "media/play-light.svg",
+          "dark": "media/play-dark.svg"
+        }
+      },
+      {
+        "command": "banewfn.packCurrent",
+        "title": "BaneWfn: Pack Current Script",
+        "icon": {
+          "light": "media/package-light.svg",
+          "dark": "media/package-dark.svg"
+        }
+      },
+      {
+        "command": "banewfn.openRelatedConf",
+        "title": "BaneWfn: Open Related Conf",
+        "icon": {
+          "light": "media/goto-light.svg",
+          "dark": "media/goto-dark.svg"
+        }
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "banewfn.runCurrent",
+          "when": "resourceLangId == banewfn",
+          "group": "navigation@1"
+        },
+        {
+          "command": "banewfn.packCurrent",
+          "when": "resourceExtname == .bw",
+          "group": "navigation@2"
+        },
+        {
+          "command": "banewfn.openRelatedConf",
+          "when": "resourceLangId == banewfn",
+          "group": "navigation@3"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "banewfn.runCurrent",
+          "when": "resourceExtname == .bw || resourceExtname == .bwc",
+          "group": "navigation@1"
+        },
+        {
+          "command": "banewfn.packCurrent",
+          "when": "resourceExtname == .bw",
+          "group": "navigation@2"
+        },
+        {
+          "command": "banewfn.openRelatedConf",
+          "when": "resourceExtname == .bw || resourceExtname == .bwc",
+          "group": "navigation@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "banewfn.openRelatedConf",
+          "when": "resourceLangId == banewfn",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "BaneWfn",
+      "properties": {
+        "banewfn.executablePath": {
+          "type": "string",
+          "default": "banewfn",
+          "description": "Path or command name for the banewfn executable."
+        },
+        "banewfn.bwpackPath": {
+          "type": "string",
+          "default": "bwpack",
+          "description": "Path or command name for the bwpack executable."
+        },
+        "banewfn.rcPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional explicit path to banewfn.rc. Used mainly for related-conf lookup and bwpack invocation."
+        },
+        "banewfn.confPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional explicit conf directory. If set, this takes precedence over rc-based lookup for related conf and bwpack."
+        },
+        "banewfn.runExtraArgs": {
+          "type": "string",
+          "default": "",
+          "description": "Extra raw command-line arguments appended when running banewfn on the current script."
+        },
+        "banewfn.cwdMode": {
+          "type": "string",
+          "default": "fileDir",
+          "enum": [
+            "fileDir",
+            "workspaceRoot"
+          ],
+          "description": "Working directory used for terminal commands."
+        },
+        "banewfn.terminalName": {
+          "type": "string",
+          "default": "BaneWfn",
+          "description": "Name of the integrated terminal used by BaneWfn commands."
+        },
+        "banewfn.autoHighlightConfFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically switch opened BaneWfn module .conf files to the banewfn-conf language mode."
+        }
+      }
+    }
+  }
+}

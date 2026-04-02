@@ -1,0 +1,183 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "BaneWfn",
+  "scopeName": "source.bw",
+  "patterns": [
+    { "include": "#inline-conf-markers" },
+    { "include": "#comments" },
+    { "include": "#headers" },
+    { "include": "#blocks" },
+    { "include": "#module-params" },
+    { "include": "#keywords" },
+    { "include": "#variables" },
+    { "include": "#strings" }
+  ],
+  "repository": {
+    "inline-conf-markers": {
+      "patterns": [
+        {
+          "name": "keyword.control.directive.inlineconf.banewfn",
+          "match": "^#>>>\\s+BANEWFN_INLINE_CONF_BEGIN.*|^#<<<\\s+BANEWFN_INLINE_CONF_END.*"
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.banewfn",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "headers": {
+      "patterns": [
+        {
+          "match": "^\\s*(wfn|core|dryrun|nogui|wfn_rebase)(=)(.*)",
+          "captures": {
+            "1": { "name": "keyword.other.banewfn" },
+            "2": { "name": "keyword.operator.assignment.banewfn" },
+            "3": {
+              "patterns": [
+                { "include": "#variables" },
+                { "name": "string.unquoted.banewfn", "match": ".*" }
+              ]
+            }
+          }
+        },
+        {
+          "match": "^\\s*([a-zA-Z0-9_]+)(\\*?=)(.*)",
+          "captures": {
+            "1": { "name": "variable.other.readwrite.banewfn" },
+            "2": { "name": "keyword.operator.assignment.banewfn" },
+            "3": {
+              "patterns": [
+                { "include": "#variables" },
+                { "name": "string.unquoted.banewfn", "match": ".*" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "module-params": {
+      "patterns": [
+        {
+          "match": "^\\s*(?!\\[|%|end\\b|wait\\b|wfn|core|dryrun|nogui|wfn_rebase)([a-zA-Z0-9_\\-\\+]+)(?:\\s+(.*))?$",
+          "captures": {
+            "1": { "name": "variable.parameter.banewfn" },
+            "2": {
+              "patterns": [
+                { "include": "#variables" },
+                { "name": "string.unquoted.banewfn", "match": ".*" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "blocks": {
+      "patterns": [
+        {
+          "name": "entity.name.section.banewfn",
+          "match": "^\\s*(\\[)([^\\]]+)(\\])",
+          "captures": {
+            "1": { "name": "punctuation.definition.tag.begin.banewfn" },
+            "2": { "name": "entity.name.tag.banewfn" },
+            "3": { "name": "punctuation.definition.tag.end.banewfn" }
+          }
+        },
+        {
+          "begin": "^\\s*(%process)\\b",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.banewfn" }
+          },
+          "end": "^\\s*(?=%|\\[|end\\b|wait\\b)",
+          "patterns": [
+            { "include": "#comments" },
+            {
+              "begin": "^\\s*([a-zA-Z0-9_\\-\\+]+)",
+              "beginCaptures": {
+                "1": { "name": "entity.name.function.banewfn" }
+              },
+              "end": "$",
+              "patterns": [
+                {
+                  "begin": "\\s+([^\\s#]+)(?:\\s+(?=[^\\s#]))?",
+                  "beginCaptures": {
+                    "1": { "name": "variable.parameter.banewfn" }
+                  },
+                  "end": "(?=\\s|$|#)",
+                  "contentName": "string.unquoted.banewfn",
+                  "patterns": [
+                    { "include": "#variables" }
+                  ]
+                },
+                { "include": "#comments" }
+              ]
+            }
+          ]
+        },
+        {
+          "begin": "^\\s*(%raw)\\b",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.banewfn" }
+          },
+          "end": "^\\s*(?=%|\\[|end\\b|wait\\b)",
+          "patterns": [
+            { "include": "#variables" },
+            { "name": "string.unquoted.raw.banewfn", "match": ".*" }
+          ]
+        },
+        {
+          "begin": "^\\s*(%command)\\b",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.banewfn" }
+          },
+          "end": "^\\s*(?=%|\\[|end\\b|wait\\b)",
+          "patterns": [
+            { "include": "#variables" },
+            { "include": "source.shell" }
+          ]
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.flow.banewfn",
+          "match": "^\\s*(end|wait)\\b"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.language.banewfn",
+          "match": "\\$\\{?(input|output|wfn)\\}?"
+        },
+        {
+          "name": "variable.other.banewfn",
+          "match": "\\$(?:[a-zA-Z0-9_]+|\\{[^\\}]+\\})"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.banewfn",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.banewfn", "match": "\\\\." },
+            { "include": "#variables" }
+          ]
+        },
+        {
+          "name": "string.quoted.single.banewfn",
+          "begin": "'",
+          "end": "'"
+        }
+      ]
+    }
+  }
+}
