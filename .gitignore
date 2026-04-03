@@ -19,3 +19,4 @@ tar
 AI*.md
 CMakeUserPresets.json
 /dist/
+cmake.sh
