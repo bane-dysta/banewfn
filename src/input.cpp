@@ -485,6 +485,14 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
             }
         }
 
+        // Apply replacement to pre-raw Multiwfn commands
+        std::vector<std::string> expandedPreRawCommands;
+        for (const auto& preRawCommand : task.preRawCommands) {
+            const auto expandedLines = replaceInputPlaceholdersExpanded(preRawCommand, wfnFile, customVars);
+            expandedPreRawCommands.insert(expandedPreRawCommands.end(), expandedLines.begin(), expandedLines.end());
+        }
+        task.preRawCommands.swap(expandedPreRawCommands);
+
         // Apply replacement to raw Multiwfn commands
         std::vector<std::string> expandedRawCommands;
         for (const auto& rawCommand : task.rawCommands) {
@@ -633,11 +641,13 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
     bool inProcessMode = false;
     bool inCommandMode = false;
     bool inRawMode = false;
+    bool inPreRawMode = false;
     std::map<std::string, int> moduleBlockCounters;  // Track block indices for each module name
     int anonymousBlockCounter = 0;
 
     auto ensureAnonymousTask = [&]() {
-        if (currentTask.moduleName.empty() && currentTask.commands.empty() && currentTask.rawCommands.empty()) {
+        if (currentTask.moduleName.empty() && currentTask.commands.empty() &&
+            currentTask.preRawCommands.empty() && currentTask.rawCommands.empty()) {
             currentTask = ModuleTask();
             currentTask.useWait = false;
             currentTask.blockIndex = anonymousBlockCounter++;
@@ -645,7 +655,8 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
     };
 
     auto hasPendingTask = [&]() {
-        return !currentTask.moduleName.empty() || !currentTask.commands.empty() || !currentTask.rawCommands.empty();
+        return !currentTask.moduleName.empty() || !currentTask.commands.empty() ||
+               !currentTask.preRawCommands.empty() || !currentTask.rawCommands.empty();
     };
     
     while (std::getline(file, line)) {
@@ -664,6 +675,19 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
             ensureAnonymousTask();
             inCommandMode = true;
             inProcessMode = false;
+            inPreRawMode = false;
+            inRawMode = false;
+            continue;
+        }
+
+        // Enter pre-raw Multiwfn command mode
+        if (trimmed == "%preraw") {
+            isSpecialKeyword = true;
+            // Primarily used inside module blocks, but allow anonymous blocks for consistency
+            ensureAnonymousTask();
+            inPreRawMode = true;
+            inCommandMode = false;
+            inProcessMode = false;
             inRawMode = false;
             continue;
         }
@@ -675,6 +699,7 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
             ensureAnonymousTask();
             inRawMode = true;
             inCommandMode = false;
+            inPreRawMode = false;
             inProcessMode = false;
             continue;
         }
@@ -688,6 +713,7 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
             }
             inProcessMode = false;
             inCommandMode = false;
+            inPreRawMode = false;
             inRawMode = false;
             continue;
         }
@@ -696,12 +722,31 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
         if (trimmed == "wait") {
             isSpecialKeyword = true;
             if (hasPendingTask()) {
-                currentTask.useWait = !currentTask.moduleName.empty() || !currentTask.rawCommands.empty();
+                currentTask.useWait = !currentTask.moduleName.empty() ||
+                                      !currentTask.preRawCommands.empty() ||
+                                      !currentTask.rawCommands.empty();
                 tasks.push_back(currentTask);
                 currentTask = ModuleTask();
             }
             inProcessMode = false;
             inCommandMode = false;
+            inPreRawMode = false;
+            inRawMode = false;
+            continue;
+        }
+
+        // Enter post-processing mode.
+        // Keep %process literal inside %command/%raw for backward compatibility,
+        // but allow it to terminate %preraw so the block can appear before other module content.
+        if (trimmed == "%process" && !inCommandMode && !inRawMode) {
+            isSpecialKeyword = true;
+            if (currentTask.moduleName.empty()) {
+                std::cerr << "Warning: %process without module definition" << std::endl;
+                continue;
+            }
+            inProcessMode = true;
+            inCommandMode = false;
+            inPreRawMode = false;
             inRawMode = false;
             continue;
         }
@@ -710,6 +755,12 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
         if (inCommandMode && !isSpecialKeyword) {
             // Command mode: store the entire raw line as a command (preserve comments and empty lines)
             currentTask.commands.push_back(line);
+            continue;
+        }
+
+        // In pre-raw mode, store literal Multiwfn input line (preserve comments and empty lines)
+        if (inPreRawMode && !isSpecialKeyword) {
+            currentTask.preRawCommands.push_back(line);
             continue;
         }
 
@@ -736,13 +787,13 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
         }
 
         // Check for dryrun=on/true format at the beginning of file
-        if (trimmed.find("dryrun=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inRawMode) {
+        if (trimmed.find("dryrun=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
             tryParseInputBoolFlag(trimmed.substr(7), "dryrun", dryrun);
             continue;
         }
 
         // Check for nogui=on/true format at the beginning of file
-        if (trimmed.find("nogui=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inRawMode) {
+        if (trimmed.find("nogui=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
             tryParseInputBoolFlag(trimmed.substr(6), "nogui", nogui);
             continue;
         }
@@ -750,7 +801,7 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
         // Special directive: wfn_rebase=xxx
         // It can appear between blocks to switch the file provided to subsequent Multiwfn tasks.
         // Only recognized when not inside any module/%process/%command.
-        if (trimmed.find("wfn_rebase=") == 0 && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inRawMode) {
+        if (trimmed.find("wfn_rebase=") == 0 && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
             ModuleTask rebaseTask;
             rebaseTask.isWfnRebase = true;
             rebaseTask.wfnRebaseFile = Utils::trim(trimmed.substr(std::string("wfn_rebase=").size()));
@@ -760,7 +811,7 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
         
         // Check for key=value format at the beginning of file (custom variables)
         // This should come before module definitions, so check if no module is active
-        if (currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inRawMode) {
+        if (currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
             size_t eqPos = trimmed.find('=');
             // Only treat as variable if:
             // 1. Contains exactly one '='
@@ -802,21 +853,10 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
                 currentTask.blockIndex = moduleBlockCounters[currentTask.moduleName]++;
                 inProcessMode = false;
                 inCommandMode = false;
+                inPreRawMode = false;
                 inRawMode = false;
                 continue;
             }
-        }
-        
-        // Enter post-processing mode
-        if (trimmed == "%process") {
-            if (currentTask.moduleName.empty()) {
-                std::cerr << "Warning: %process without module definition" << std::endl;
-                continue;
-            }
-            inProcessMode = true;
-            inCommandMode = false;
-            inRawMode = false;
-            continue;
         }
         
         // Parse parameters, post-processing commands, or shell commands
@@ -824,6 +864,10 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
             // This should not be reached, as command mode lines are handled above
             // But keep as fallback
             currentTask.commands.push_back(line);
+        } else if (inPreRawMode) {
+            // This should not be reached, as pre-raw mode lines are handled above
+            // But keep as fallback
+            currentTask.preRawCommands.push_back(line);
         } else if (inRawMode) {
             // This should not be reached, as raw mode lines are handled above
             // But keep as fallback

@@ -9,6 +9,7 @@ struct ModuleTask {
     std::string moduleName;
     std::map<std::string, std::string> params;
     std::vector<std::pair<std::string, std::map<std::string, std::string>>> postProcessSteps;
+    std::vector<std::string> preRawCommands;  // Commands from %preraw block (inserted before [main])
     std::vector<std::string> rawCommands;  // Commands from %raw block (literal Multiwfn input sequence)
     std::vector<std::string> commands;  // Commands from %command block
     bool useWait;  // Whether to use wait mode (interactive mode)

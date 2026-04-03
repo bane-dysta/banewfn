@@ -223,12 +223,15 @@ static void pauseIfWindowsDryRun(bool shouldPause) {
 }
 
 static bool taskHasMultiwfnScript(const ModuleTask& task) {
-    return !task.moduleName.empty() || !task.rawCommands.empty();
+    return !task.moduleName.empty() || !task.preRawCommands.empty() || !task.rawCommands.empty();
 }
 
 static std::string getTaskDisplayName(const ModuleTask& task) {
     if (!task.moduleName.empty()) {
         return task.moduleName;
+    }
+    if (!task.preRawCommands.empty()) {
+        return "%preraw";
     }
     if (!task.rawCommands.empty()) {
         return "%raw";
@@ -240,7 +243,10 @@ static std::string getTaskDisplayName(const ModuleTask& task) {
 }
 
 static std::string getMultiwfnFileStem(const ModuleTask& task, const std::string& wfnFile) {
-    std::string stem = task.moduleName.empty() ? "raw" : task.moduleName;
+    std::string stem = task.moduleName;
+    if (stem.empty()) {
+        stem = task.preRawCommands.empty() ? "raw" : "preraw";
+    }
 
     std::string wfnBaseName = getBaseName(wfnFile);
     if (!wfnBaseName.empty()) {
@@ -341,13 +347,19 @@ public:
     }
     
     // Generate Multiwfn input script for a single task.
-    // For normal module tasks, this includes [main] + %process sections + optional %raw.
-    // For raw-only tasks, this is simply the literal %raw content.
+    // For normal module tasks, this includes optional %preraw + [main] + %process sections + optional %raw.
+    // For raw-only tasks, this is simply the literal %preraw/%raw content.
     std::string generateModuleScript(const ModuleTask& task, bool includeQuit) {
         std::stringstream output;
 
         bool hasContent = false;
         const ModuleConfig* modConfig = nullptr;
+
+        // Insert literal pre-raw Multiwfn commands before generated module commands.
+        for (const auto& preRawCmd : task.preRawCommands) {
+            output << preRawCmd << "\n";
+            hasContent = true;
+        }
 
         if (!task.moduleName.empty()) {
             if (!configManager.hasModuleConfig(task.moduleName)) {
@@ -1048,6 +1060,7 @@ void printUsage(const char* progName) {
     std::cout << "  wfn=..., core=..., dryrun=on/true, nogui=on/true, wfn_rebase=...\n";
     std::cout << "\nInput block hints:\n";
     std::cout << "  %command ... end    Run shell/batch post-commands\n";
+    std::cout << "  %preraw ... end/wait Send literal Multiwfn commands before [main]\n";
     std::cout << "  %raw ... end/wait   Send literal Multiwfn commands\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << progName << " input.inp molecule.fchk\n";

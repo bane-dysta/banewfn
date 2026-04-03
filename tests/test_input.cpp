@@ -44,6 +44,8 @@ state=(1 2 3)
 
 [fmo]
 index h
+%preraw
+1000
 %process
 orb grid 3
 %raw
@@ -81,6 +83,8 @@ end
     CHECK(moduleTask.blockIndex == 0);
     CHECK(moduleTask.useWait);
     CHECK(moduleTask.params.at("index") == "h");
+    const std::vector<std::string> expectedPreRaw = {"1000"};
+    CHECK(moduleTask.preRawCommands == expectedPreRaw);
     REQUIRE(moduleTask.postProcessSteps.size() == 1);
     CHECK(moduleTask.postProcessSteps[0].first == "orb");
     CHECK(moduleTask.postProcessSteps[0].second.at("grid") == "3");
@@ -156,6 +160,7 @@ TEST_CASE("applyPlaceholderReplacement handles input custom file and reserved ou
     task.moduleName = "demo";
     task.params["title"] = "$input";
     task.params["from_file"] = "${note}";
+    task.preRawCommands = {"before ${wfn}", "prefix ${prefix}"};
     task.rawCommands = {"open ${wfn}", "keep ${output}"};
     task.commands = {"echo ${prefix}", "echo ${missing}"};
 
@@ -173,6 +178,11 @@ TEST_CASE("applyPlaceholderReplacement handles input custom file and reserved ou
 
     CHECK(tasks[0].params.at("title") == "sample");
     CHECK(tasks[0].params.at("from_file") == "file note");
+    const std::vector<std::string> expectedPreRaw = {
+        "before /tmp/calc/sample.fchk",
+        "prefix final"
+    };
+    CHECK(tasks[0].preRawCommands == expectedPreRaw);
     const std::vector<std::string> expectedRaw = {
         "open /tmp/calc/sample.fchk",
         "keep ${output}"
@@ -241,6 +251,10 @@ TEST_CASE("applyPlaceholderReplacement expands var* in raw commands and resolves
     task.moduleName = "demo";
     task.params["frag*"] = "${frag*}";
     task.params["count"] = "${len(frag)}";
+    task.preRawCommands = {
+        "pre ${frag*}",
+        "count ${len(frag)}"
+    };
     task.rawCommands = {
         "${len(frag)}",
         "${frag*}",
@@ -257,6 +271,13 @@ TEST_CASE("applyPlaceholderReplacement expands var* in raw commands and resolves
 
     CHECK(tasks[0].params.at("frag*") == "(1 3 5)");
     CHECK(tasks[0].params.at("count") == "3");
+    const std::vector<std::string> expectedPreRaw = {
+        "pre 1",
+        "pre 3",
+        "pre 5",
+        "count 3"
+    };
+    CHECK(tasks[0].preRawCommands == expectedPreRaw);
     const std::vector<std::string> expectedRaw = {
         "3",
         "1",
