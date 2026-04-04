@@ -57,7 +57,7 @@ Source: "{#StageDir}\banewfn.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\bwpack.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\conf\*"; DestDir: "{app}\conf"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#StageDir}\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#StageDir}\docs\out\BaneWfn_Project_Manual_zh.pdf"; DestDir: "{app}\docs\out"; Flags: ignoreversion createallsubdirs
+Source: "{#StageDir}\docs\out\BaneWfn_Project_Manual_zh.pdf"; DestDir: "{app}\docs\out"; Flags: ignoreversion
 
 ; ===== 强关联注册表（分别写两个 ProgID）=====
 [Registry]
