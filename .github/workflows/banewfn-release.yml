@@ -146,10 +146,14 @@ jobs:
 
           cmake --install build/windows-release --prefix "$STAGE_DIR"
 
-          if [ -d scripts ]; then
-            mkdir -p "$STAGE_DIR/scripts"
-            cp -a scripts/. "$STAGE_DIR/scripts/"
-          fi
+          mkdir -p "$STAGE_DIR/scripts"
+          cp -a scripts/. "$STAGE_DIR/scripts/"
+
+          test -f "$STAGE_DIR/banewfn.exe"
+          test -f "$STAGE_DIR/bwpack.exe"
+          test -d "$STAGE_DIR/conf"
+          test -d "$STAGE_DIR/scripts"
+          test -f "$STAGE_DIR/docs/out/BaneWfn_Project_Manual_zh.pdf"
 
           find "$STAGE_DIR" -maxdepth 4 -type f | sort
 
@@ -169,8 +173,8 @@ jobs:
           name: windows-stage
           if-no-files-found: error
           path: |
-            release/windows-release/stage/**
-            inno_setup/**
+            release/windows-release/stage
+            inno_setup
             src/resource/mothwfn.ico
 
   build-windows-installer:
@@ -195,21 +199,34 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = Get-ChildItem -Path staging -Recurse -Filter banewfn.exe | Select-Object -First 1
-          if (-not $exe) {
-            throw 'banewfn.exe not found in staging artifact'
+
+          $stageDir = Join-Path $PWD 'staging/release/windows-release/stage'
+          if (-not (Test-Path (Join-Path $stageDir 'banewfn.exe'))) {
+            throw "banewfn.exe not found under expected stage dir: $stageDir"
+          }
+          if (-not (Test-Path (Join-Path $stageDir 'bwpack.exe'))) {
+            throw "bwpack.exe not found under expected stage dir: $stageDir"
+          }
+          if (-not (Test-Path (Join-Path $stageDir 'conf'))) {
+            throw "conf directory not found under expected stage dir: $stageDir"
+          }
+          if (-not (Test-Path (Join-Path $stageDir 'scripts'))) {
+            throw "scripts directory not found under expected stage dir: $stageDir"
+          }
+          if (-not (Test-Path (Join-Path $stageDir 'docs/out/BaneWfn_Project_Manual_zh.pdf'))) {
+            throw "manual PDF not found under expected stage dir: $stageDir"
           }
 
-          $iss = Get-ChildItem -Path staging -Recurse -Filter banewfn.iss | Select-Object -First 1
-          if (-not $iss) {
-            throw 'banewfn.iss not found in staging artifact'
+          $issPath = Join-Path $PWD 'staging/inno_setup/banewfn.iss'
+          if (-not (Test-Path $issPath)) {
+            throw "banewfn.iss not found at expected path: $issPath"
           }
 
           $outDir = Join-Path $PWD 'dist/windows-installer'
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 
-          "stage_dir=$($exe.Directory.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "iss_path=$($iss.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "stage_dir=$stageDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "iss_path=$issPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "output_dir=$outDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install Inno Setup
