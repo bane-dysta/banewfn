@@ -1,5 +1,13 @@
+#ifndef StageDir
+#define StageDir "..\release\windows-release\stage"
+#endif
+
+#ifndef OutputDir
+#define OutputDir "."
+#endif
+
 #define MyAppName "Banewfn"
-#define MyAppVersion "1.3"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "Bane Dysta"
 #define MyAppURL "https://github.com/bane-dysta/banewfn"
 #define MyAppExeName "banewfn.exe"
@@ -29,7 +37,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ChangesAssociations=yes
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-OutputDir=.
+OutputDir={#OutputDir}
 OutputBaseFilename=banewfn_setup
 SetupIconFile=..\src\resource\mothwfn.ico
 SolidCompression=yes
@@ -45,11 +53,11 @@ Name: "assoc_bw";  Description: "Associate .bw (Banewfn Script) with Banewfn";  
 Name: "assoc_bwc"; Description: "Associate .bwc (Banewfn Script with conf) with Banewfn";  GroupDescription: "File associations"; Flags: checkedonce
 
 [Files]
-Source: "..\build_windows\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\build_windows\bwpack.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\conf\*.conf"; DestDir: "{app}\conf"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\docs\out\BaneWfn_Project_Manual_zh.pdf"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs 
+Source: "{#StageDir}\banewfn.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\bwpack.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\conf\*"; DestDir: "{app}\conf"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StageDir}\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StageDir}\docs\out\BaneWfn_Project_Manual_zh.pdf"; DestDir: "{app}\docs\out"; Flags: ignoreversion createallsubdirs
 
 ; ===== 强关联注册表（分别写两个 ProgID）=====
 [Registry]
@@ -193,4 +201,3 @@ begin
   SaveStringToFile(RCFile, 'confpath='     + ConfPath     + #13#10, True);
   SaveStringToFile(RCFile, 'cores='        + CoresValue   + #13#10, True);
 end;
-

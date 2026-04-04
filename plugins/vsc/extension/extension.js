@@ -385,7 +385,7 @@ async function findExternalConfUri(document, moduleName) {
 
   if (workspaceFolder) {
     const pattern = new vscode.RelativePattern(workspaceFolder, `**/${moduleName}.conf`);
-    const found = await vscode.workspace.findFiles(pattern, '**/{.git,node_modules,build,dist}/**', 5);
+    const found = await vscode.workspace.findFiles(pattern, '**/{.git,node_modules,build,release}/**', 5);
     if (found.length > 0) {
       return found[0];
     }

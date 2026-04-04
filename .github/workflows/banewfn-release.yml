@@ -1,0 +1,268 @@
+name: Build and Release Banewfn
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-manual:
+    name: Build manual
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install manual build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pandoc \
+            texlive-xetex \
+            texlive-lang-chinese \
+            texlive-latex-recommended \
+            texlive-fonts-recommended \
+            fonts-noto-core \
+            fonts-noto-cjk \
+            fonts-noto-mono
+
+      - name: Build manual PDF
+        run: ./docs/build.sh
+
+      - name: Upload manual artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: manual-pdf
+          if-no-files-found: error
+          path: docs/out/BaneWfn_Project_Manual_zh.pdf
+
+  build-linux-release:
+    name: Build Linux release CPack
+    runs-on: ubuntu-latest
+    needs: build-manual
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download manual artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: manual-pdf
+          path: docs/out
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            g++
+
+      - name: Configure Linux release
+        run: |
+          cmake -S . -B build/linux-release \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+
+      - name: Build Linux release binaries
+        run: cmake --build build/linux-release --parallel 2
+
+      - name: Build Linux CPack package
+        run: |
+          mkdir -p release/linux-release
+          cpack --config build/linux-release/CPackConfig.cmake -B release/linux-release
+
+      - name: Show Linux release files
+        run: find release/linux-release -maxdepth 2 -type f | sort
+
+      - name: Upload Linux release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          if-no-files-found: error
+          path: release/linux-release/*.sh
+
+  build-windows-release:
+    name: Build Windows release CPack
+    runs-on: ubuntu-latest
+    needs: build-manual
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download manual artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: manual-pdf
+          path: docs/out
+
+      - name: Install Windows cross-build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            zip \
+            mingw-w64 \
+            g++-mingw-w64-x86-64 \
+            gcc-mingw-w64-x86-64 \
+            binutils-mingw-w64-x86-64
+
+      - name: Configure Windows release
+        run: |
+          cmake -S . -B build/windows-release \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-x86_64.cmake
+
+      - name: Build Windows release binaries
+        run: cmake --build build/windows-release --parallel 2
+
+      - name: Build Windows CPack package
+        run: |
+          mkdir -p release/windows-release
+          cpack --config build/windows-release/CPackConfig.cmake -B release/windows-release
+
+      - name: Stage Windows installer tree
+        run: bash ./scripts/release/stage_windows_release.sh build/windows-release release/windows-release/stage
+
+      - name: Show Windows release files
+        run: find release/windows-release -maxdepth 3 -type f | sort
+
+      - name: Upload Windows release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          if-no-files-found: error
+          path: release/windows-release/*.zip
+
+      - name: Upload Windows installer staging artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-stage
+          if-no-files-found: error
+          path: |
+            release/windows-release/stage/**
+            inno_setup/**
+            src/resource/mothwfn.ico
+
+  build-windows-installer:
+    name: Build Windows installer
+    runs-on: windows-2022
+    needs: build-windows-release
+
+    steps:
+      - name: Download Windows installer staging artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-stage
+          path: staging
+
+      - name: Show staging files
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse staging
+
+      - name: Resolve stage paths
+        id: stage
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem -Path staging -Recurse -Filter banewfn.exe | Select-Object -First 1
+          if (-not $exe) {
+            throw 'banewfn.exe not found in staging artifact'
+          }
+
+          $iss = Get-ChildItem -Path staging -Recurse -Filter banewfn.iss | Select-Object -First 1
+          if (-not $iss) {
+            throw 'banewfn.iss not found in staging artifact'
+          }
+
+          $outDir = Join-Path $PWD 'dist/windows-installer'
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+
+          "stage_dir=$($exe.Directory.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "iss_path=$($iss.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "output_dir=$outDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          curl.exe -L -o innosetup.exe https://files.jrsoftware.org/is/6/innosetup-6.6.0.exe
+          .\innosetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          ISCC.exe "/DStageDir=${{ steps.stage.outputs.stage_dir }}" "/DOutputDir=${{ steps.stage.outputs.output_dir }}" "${{ steps.stage.outputs.iss_path }}"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          if-no-files-found: error
+          path: dist/windows-installer/*.exe
+
+  publish-release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs:
+      - build-manual
+      - build-linux-release
+      - build-windows-release
+      - build-windows-installer
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Show release assets
+        run: find dist -maxdepth 3 -type f | sort
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ci-${{ github.run_id }}
+          RELEASE_TARGET: ${{ github.sha }}
+          RELEASE_TITLE: CI build #${{ github.run_number }}
+          RELEASE_NOTES: |
+            Automated CI release
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            dist/linux-release/* \
+            dist/windows-release/* \
+            dist/windows-installer/* \
+            dist/manual-pdf/* \
+            --target "$RELEASE_TARGET" \
+            --title "$RELEASE_TITLE" \
+            --notes "$RELEASE_NOTES" \
+            --prerelease

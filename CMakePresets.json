@@ -49,7 +49,7 @@
       "generators": [
         "STGZ"
       ],
-      "packageDirectory": "${sourceDir}/dist/linux-release"
+      "packageDirectory": "${sourceDir}/release/linux-release"
     },
     {
       "name": "windows-release",
@@ -57,7 +57,7 @@
       "generators": [
         "ZIP"
       ],
-      "packageDirectory": "${sourceDir}/dist/windows-release"
+      "packageDirectory": "${sourceDir}/release/windows-release"
     }
   ],
   "workflowPresets": [

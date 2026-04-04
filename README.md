@@ -54,8 +54,8 @@ cmake --workflow --preset windows-release
 
 输出位置：
 
-- Linux 自解压安装包：`dist/linux-release/`（`STGZ`，即 `.sh` 内嵌 `tar.gz`）
-- Windows 便携发布包：`dist/windows-release/`（`ZIP`）
+- Linux 自解压安装包：`release/linux-release/`（`STGZ`，即 `.sh` 内嵌 `tar.gz`）
+- Windows 便携发布包：`release/windows-release/`（`ZIP`）
 
 包内容包括：
 
@@ -86,7 +86,7 @@ cmake --workflow --preset linux-release-local-assets
 ./scripts/release/stage_windows_release.sh build/windows-release /mnt/d/banewfn-stage
 ```
 
-默认会生成 `dist/windows-release/stage/`。如果你的仓库在 WSL 的 Linux 文件系统里，更推荐直接 stage 到 `/mnt/c/...` 或 `/mnt/d/...`，然后让 Inno Setup 只读取这个 stage 目录里的 `banewfn.exe`、`bwpack.exe`、`conf/` 和 `docs/out/`，这样 exe、配置和手册永远来自同一份发布树。
+默认会生成 `release/windows-release/stage/`。如果你的仓库在 WSL 的 Linux 文件系统里，更推荐直接 stage 到 `/mnt/c/...` 或 `/mnt/d/...`，然后让 Inno Setup 只读取这个 stage 目录里的 `banewfn.exe`、`bwpack.exe`、`conf/` 和 `docs/out/`，这样 exe、配置和手册永远来自同一份发布树。
 
 Windows 交叉编译预设依赖 MinGW-w64，例如：
 

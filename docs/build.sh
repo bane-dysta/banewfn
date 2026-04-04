@@ -6,10 +6,11 @@ OUT_DIR="$SCRIPT_DIR/out"
 OUT_PDF="$OUT_DIR/BaneWfn_Project_Manual_zh.pdf"
 
 mkdir -p "$OUT_DIR"
+cd "$SCRIPT_DIR"
 
-pandoc "$SCRIPT_DIR/BaneWfn_Project_Manual_zh.md" \
+pandoc "BaneWfn_Project_Manual_zh.md" \
   --resource-path "$SCRIPT_DIR" \
-  --defaults "$SCRIPT_DIR/pandoc.yaml" \
+  --defaults "pandoc.yaml" \
   --output "$OUT_PDF"
 
 echo "[OK] wrote $OUT_PDF"

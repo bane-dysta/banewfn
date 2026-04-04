@@ -18,5 +18,5 @@ tar
 *.patch
 AI*.md
 CMakeUserPresets.json
-/dist/
+/release/
 cmake.sh
