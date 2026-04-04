@@ -12,7 +12,6 @@ btask_wfn
 examples
 *.tar.gz
 *.tgz
-scripts/*
 tar
 *.exe
 *.patch
