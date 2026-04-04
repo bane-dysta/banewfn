@@ -26,6 +26,8 @@ option(BANEWFN_BUILD_TESTS "Build unit tests" OFF)
 
 set(BANEWFN_PACKAGE_CONF_SOURCE "${CMAKE_SOURCE_DIR}/conf" CACHE PATH
     "Directory bundled as conf/ in release packages")
+set(BANEWFN_PACKAGE_SCRIPT_SOURCE "${CMAKE_SOURCE_DIR}/scripts" CACHE PATH
+    "Directory bundled as scripts/ in release packages")
 set(BANEWFN_PACKAGE_DOC_SOURCE "${CMAKE_SOURCE_DIR}/docs/out" CACHE PATH
     "Directory bundled as docs/out/ in release packages")
 set(BANEWFN_PACKAGE_DOC_PATTERN "*.pdf" CACHE STRING
@@ -95,6 +97,15 @@ else()
     message(WARNING "banewfn: conf source directory does not exist and will not be packaged: ${BANEWFN_PACKAGE_CONF_SOURCE}")
 endif()
 
+if(IS_DIRECTORY "${BANEWFN_PACKAGE_SCRIPT_SOURCE}")
+    install(DIRECTORY "${BANEWFN_PACKAGE_SCRIPT_SOURCE}/"
+        DESTINATION scripts
+        PATTERN "release" EXCLUDE
+    )
+else()
+    message(WARNING "banewfn: scripts source directory does not exist and will not be packaged: ${BANEWFN_PACKAGE_SCRIPT_SOURCE}")
+endif()
+
 if(IS_DIRECTORY "${BANEWFN_PACKAGE_DOC_SOURCE}")
     file(GLOB BANEWFN_PACKAGE_MANUALS "${BANEWFN_PACKAGE_DOC_SOURCE}/${BANEWFN_PACKAGE_DOC_PATTERN}")
     if(BANEWFN_PACKAGE_MANUALS)
@@ -140,4 +151,5 @@ if(BUILD_STATIC)
     message(STATUS "banewfn: Static linking enabled")
 endif()
 message(STATUS "banewfn: Release conf source = ${BANEWFN_PACKAGE_CONF_SOURCE}")
+message(STATUS "banewfn: Release scripts source = ${BANEWFN_PACKAGE_SCRIPT_SOURCE}")
 message(STATUS "banewfn: Release docs source = ${BANEWFN_PACKAGE_DOC_SOURCE}")

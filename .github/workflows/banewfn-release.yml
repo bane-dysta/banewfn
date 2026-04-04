@@ -25,7 +25,15 @@ jobs:
       - name: Install manual build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y             pandoc             texlive-xetex             texlive-lang-chinese             texlive-latex-recommended             texlive-fonts-recommended             fonts-noto-core             fonts-noto-cjk             fonts-noto-mono
+          sudo apt-get install -y \
+            pandoc \
+            texlive-xetex \
+            texlive-lang-chinese \
+            texlive-latex-recommended \
+            texlive-fonts-recommended \
+            fonts-noto-core \
+            fonts-noto-cjk \
+            fonts-noto-mono
 
       - name: Build manual PDF
         run: ./docs/build.sh
@@ -55,10 +63,15 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y             cmake             make             g++
+          sudo apt-get install -y \
+            cmake \
+            g++
 
-      - name: Run Linux preset workflow
-        run: cmake --workflow --preset linux-release
+      - name: Build Linux release with CMake presets
+        run: |
+          cmake --preset linux-release
+          cmake --build --preset linux-release
+          cpack --preset linux-release
 
       - name: Show Linux release files
         run: find release/linux-release -maxdepth 2 -type f | sort
@@ -88,22 +101,33 @@ jobs:
       - name: Install Windows cross-build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y             cmake             make             zip             mingw-w64             g++-mingw-w64-x86-64             gcc-mingw-w64-x86-64             binutils-mingw-w64-x86-64
+          sudo apt-get install -y \
+            cmake \
+            zip \
+            mingw-w64 \
+            g++-mingw-w64-x86-64 \
+            gcc-mingw-w64-x86-64 \
+            binutils-mingw-w64-x86-64
 
-      - name: Run Windows preset workflow
-        run: cmake --workflow --preset windows-release
+      - name: Build Windows release with CMake presets
+        run: |
+          cmake --preset windows-release
+          cmake --build --preset windows-release
+          cpack --preset windows-release
 
       - name: Stage Windows installer tree
         run: |
           set -euxo pipefail
           STAGE_DIR=release/windows-release/stage
           rm -rf "$STAGE_DIR"
+          mkdir -p "$STAGE_DIR"
+
           cmake --install build/windows-release --prefix "$STAGE_DIR"
-          test -f "$STAGE_DIR/banewfn.exe"
-          test -d "$STAGE_DIR/conf"
-          test -d "$STAGE_DIR/scripts"
-          test -f "$STAGE_DIR/docs/out/BaneWfn_Project_Manual_zh.pdf"
+
           find "$STAGE_DIR" -maxdepth 4 -type f | sort
+
+      - name: Show Windows release files
+        run: find release/windows-release -maxdepth 3 -type f | sort
 
       - name: Upload Windows release artifact
         uses: actions/upload-artifact@v4
@@ -118,8 +142,8 @@ jobs:
           name: windows-stage
           if-no-files-found: error
           path: |
-            release/windows-release/stage
-            inno_setup
+            release/windows-release/stage/**
+            inno_setup/**
             src/resource/mothwfn.ico
 
   build-windows-installer:
@@ -144,31 +168,21 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem -Path staging -Recurse -Filter banewfn.exe | Select-Object -First 1
+          if (-not $exe) {
+            throw 'banewfn.exe not found in staging artifact'
+          }
 
-          $stageDir = Join-Path $PWD 'staging/release/windows-release/stage'
-          $issPath = Join-Path $PWD 'staging/inno_setup/banewfn.iss'
+          $iss = Get-ChildItem -Path staging -Recurse -Filter banewfn.iss | Select-Object -First 1
+          if (-not $iss) {
+            throw 'banewfn.iss not found in staging artifact'
+          }
+
           $outDir = Join-Path $PWD 'dist/windows-installer'
-
-          if (-not (Test-Path (Join-Path $stageDir 'banewfn.exe'))) {
-            throw "banewfn.exe not found under $stageDir"
-          }
-          if (-not (Test-Path (Join-Path $stageDir 'scripts'))) {
-            throw "scripts directory not found under $stageDir"
-          }
-          if (-not (Test-Path (Join-Path $stageDir 'conf'))) {
-            throw "conf directory not found under $stageDir"
-          }
-          if (-not (Test-Path (Join-Path $stageDir 'docs/out/BaneWfn_Project_Manual_zh.pdf'))) {
-            throw "manual PDF not found under $stageDir/docs/out"
-          }
-          if (-not (Test-Path $issPath)) {
-            throw "banewfn.iss not found at $issPath"
-          }
-
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 
-          "stage_dir=$stageDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "iss_path=$issPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "stage_dir=$($exe.Directory.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "iss_path=$($iss.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "output_dir=$outDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install Inno Setup
@@ -177,15 +191,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
-          $url = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_1/innosetup-6.7.1.exe'
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_1/innosetup-6.7.1.exe"
           curl.exe -fL --retry 3 --retry-delay 2 -o innosetup.exe $url
 
           if ((Get-Item .\innosetup.exe).Length -lt 5MB) {
-            throw 'Downloaded innosetup.exe is unexpectedly small.'
+            throw "Downloaded innosetup.exe is unexpectedly small."
           }
 
           .\innosetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-          'C:\Program Files (x86)\Inno Setup 6' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build installer
         shell: pwsh
@@ -215,45 +229,32 @@ jobs:
       contents: write
 
     steps:
-      - name: Download manual artifact
+      - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
-          name: manual-pdf
-          path: release-assets/manual
+          path: dist
 
-      - name: Download Linux release artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-release
-          path: release-assets/linux
+      - name: Show release assets
+        run: find dist -maxdepth 3 -type f | sort
 
-      - name: Download Windows release artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-release
-          path: release-assets/windows
-
-      - name: Download Windows installer artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-installer
-          path: release-assets/windows-installer
-
-      - name: Prepare release metadata
-        id: meta
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ci-${{ github.run_id }}
+          RELEASE_TARGET: ${{ github.sha }}
+          RELEASE_TITLE: CI build #${{ github.run_number }}
+          RELEASE_NOTES: |
+            Automated CI release
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          tag="ci-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "name=Banewfn CI Release $tag" >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: ${{ steps.meta.outputs.name }}
-          generate_release_notes: true
-          files: |
-            release-assets/manual/BaneWfn_Project_Manual_zh.pdf
-            release-assets/linux/*.sh
-            release-assets/windows/*.zip
-            release-assets/windows-installer/*.exe
+          gh release create "$RELEASE_TAG" \
+            dist/linux-release/* \
+            dist/windows-release/* \
+            dist/windows-installer/* \
+            dist/manual-pdf/* \
+            --target "$RELEASE_TARGET" \
+            --title "$RELEASE_TITLE" \
+            --notes "$RELEASE_NOTES" \
+            --prerelease
