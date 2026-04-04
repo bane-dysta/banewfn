@@ -218,7 +218,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
-          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6.7.1/innosetup-6.7.1.exe"
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_1/innosetup-6.7.1.exe"
           curl.exe -fL --retry 3 --retry-delay 2 -o innosetup.exe $url
 
           if ((Get-Item .\innosetup.exe).Length -lt 5MB) {
