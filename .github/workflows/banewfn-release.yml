@@ -240,6 +240,7 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ci-${{ github.run_id }}
           RELEASE_TARGET: ${{ github.sha }}
           RELEASE_TITLE: CI build #${{ github.run_number }}
@@ -254,6 +255,7 @@ jobs:
             dist/windows-release/* \
             dist/windows-installer/* \
             dist/manual-pdf/* \
+            --repo "$GH_REPO" \
             --target "$RELEASE_TARGET" \
             --title "$RELEASE_TITLE" \
             --notes "$RELEASE_NOTES" \
