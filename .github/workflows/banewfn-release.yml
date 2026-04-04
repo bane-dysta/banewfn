@@ -138,7 +138,20 @@ jobs:
           cpack --config build/windows-release/CPackConfig.cmake -B release/windows-release
 
       - name: Stage Windows installer tree
-        run: bash ./scripts/release/stage_windows_release.sh build/windows-release release/windows-release/stage
+        run: |
+          set -euxo pipefail
+          STAGE_DIR=release/windows-release/stage
+          rm -rf "$STAGE_DIR"
+          mkdir -p "$STAGE_DIR"
+
+          cmake --install build/windows-release --prefix "$STAGE_DIR"
+
+          if [ -d scripts ]; then
+            mkdir -p "$STAGE_DIR/scripts"
+            cp -a scripts/. "$STAGE_DIR/scripts/"
+          fi
+
+          find "$STAGE_DIR" -maxdepth 4 -type f | sort
 
       - name: Show Windows release files
         run: find release/windows-release -maxdepth 3 -type f | sort
