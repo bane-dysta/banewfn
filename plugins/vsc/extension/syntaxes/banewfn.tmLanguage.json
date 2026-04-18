@@ -118,6 +118,17 @@
           ]
         },
         {
+          "begin": "^\\s*(%preraw)\\b",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.banewfn" }
+          },
+          "end": "^\\s*(?=%|\\[|end\\b|wait\\b)",
+          "patterns": [
+            { "include": "#variables" },
+            { "name": "string.unquoted.raw.banewfn", "match": ".*" }
+          ]
+        },
+        {
           "begin": "^\\s*(%raw)\\b",
           "beginCaptures": {
             "1": { "name": "keyword.control.banewfn" }

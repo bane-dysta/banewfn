@@ -559,7 +559,7 @@ async function maybeRetagConfDocument(document, retagging) {
 function looksLikeBaneConf(text) {
   return /(^|\n)\s*\[main\]\s*($|\n)/m.test(text)
     || /(^|\n)\s*\[quit\]\s*($|\n)/m.test(text)
-    || /(^|\n)\s*default\s*\{\s*($|\n)/m.test(text);
+    || /(^|\n)\s*-default-\s*($|\n)/m.test(text);
 }
 
 module.exports = {
