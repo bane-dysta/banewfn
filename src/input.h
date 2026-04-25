@@ -2,6 +2,7 @@
 #define INPUT_H
 #include <string>
 #include <map>
+#include <tuple>
 #include <vector>
 
 // Single module task information
@@ -37,6 +38,20 @@ struct ExecutionOptions {
     ExecutionOptions() : dryrun(false), screen(false), nogui(false), noColor(false) {}
 };
 
+// Parsed input file with named fields. Prefer this over tuple-returning helpers
+// when adding new input header fields or passing parsed input through layers.
+struct ParsedInputFile {
+    std::vector<ModuleTask> tasks;
+    std::string wfnFile;
+    int cores;
+    std::map<std::string, std::vector<std::string>> customVars;
+    bool dryrun;
+    bool nogui;
+    bool loaded;
+
+    ParsedInputFile() : cores(-1), dryrun(false), nogui(false), loaded(false) {}
+};
+
 // Input parser class
 class InputParser {
 public:
@@ -46,8 +61,11 @@ public:
     static std::pair<std::vector<ModuleTask>, std::string> parseInpFileWithWfn(const std::string& inpFile);
     // Parse inp file, return all module tasks, optional wfn file, and core count
     static std::tuple<std::vector<ModuleTask>, std::string, int> parseInpFileWithWfnAndCores(const std::string& inpFile);
+    // Parse inp file, returning a named result object. This is the canonical API.
+    static ParsedInputFile parseInpFileDetailed(const std::string& inpFile);
     // Parse inp file, return all module tasks, optional wfn file, core count,
     // custom variables, and whether header dryrun/nogui modes are enabled.
+    // Kept for backward compatibility with existing callers/tests.
     static std::tuple<std::vector<ModuleTask>, std::string, int,
                       std::map<std::string, std::vector<std::string>>, bool, bool>
     parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile);

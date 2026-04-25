@@ -84,41 +84,92 @@ if(BANEWFN_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-# Install runtime files directly at package root.
+include(GNUInstallDirs)
+
+set(BANEWFN_DEFAULT_MULTIWFN_EXEC "Multiwfn" CACHE STRING
+    "Default Multiwfn executable written to generated banewfn.rc")
+set(BANEWFN_DEFAULT_CORES "32" CACHE STRING
+    "Default core count written to generated banewfn.rc")
+
+# Windows release/installer staging intentionally keeps the historical portable
+# layout because inno_setup/banewfn.iss consumes that tree directly.
+# Native Unix installs use the normal FHS-style layout:
+#   <prefix>/bin                     executables
+#   <prefix>/share/banewfn/conf      module configuration
+#   <prefix>/share/banewfn/scripts   helper scripts
+#   <prefix>/share/doc/banewfn       manual PDFs
+#   <prefix>/etc/banewfn/banewfn.rc  default system config
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(BANEWFN_INSTALL_BINDIR ".")
+    set(BANEWFN_INSTALL_CONFDIR "conf")
+    set(BANEWFN_INSTALL_SCRIPTSDIR "scripts")
+    set(BANEWFN_INSTALL_DOCDIR "docs/out")
+    set(BANEWFN_INSTALL_RCDIR ".")
+    set(BANEWFN_GENERATED_CONFPATH "conf")
+else()
+    set(BANEWFN_INSTALL_BINDIR "${CMAKE_INSTALL_BINDIR}")
+    set(BANEWFN_INSTALL_CONFDIR "${CMAKE_INSTALL_DATADIR}/banewfn/conf")
+    set(BANEWFN_INSTALL_SCRIPTSDIR "${CMAKE_INSTALL_DATADIR}/banewfn/scripts")
+    set(BANEWFN_INSTALL_DOCDIR "${CMAKE_INSTALL_DOCDIR}")
+    set(BANEWFN_INSTALL_RCDIR "${CMAKE_INSTALL_SYSCONFDIR}/banewfn")
+    set(BANEWFN_GENERATED_CONFPATH "${CMAKE_INSTALL_FULL_DATADIR}/banewfn/conf")
+
+    target_compile_definitions(banewfn_core PRIVATE
+        BANEWFN_SYSTEM_RC_PATH="${CMAKE_INSTALL_FULL_SYSCONFDIR}/banewfn/banewfn.rc"
+        BANEWFN_SYSTEM_SHARE_RC_PATH="${CMAKE_INSTALL_FULL_DATADIR}/banewfn/conf/banewfn.rc"
+    )
+endif()
+
+set(BANEWFN_GENERATED_RC "${CMAKE_CURRENT_BINARY_DIR}/banewfn.rc")
+file(WRITE "${BANEWFN_GENERATED_RC}"
+    "Multiwfn_exec=${BANEWFN_DEFAULT_MULTIWFN_EXEC}\n"
+    "confpath=${BANEWFN_GENERATED_CONFPATH}\n"
+    "cores=${BANEWFN_DEFAULT_CORES}\n"
+)
+
 install(TARGETS banewfn bwpack
-    RUNTIME DESTINATION .
+    RUNTIME DESTINATION "${BANEWFN_INSTALL_BINDIR}"
 )
 
 if(IS_DIRECTORY "${BANEWFN_PACKAGE_CONF_SOURCE}")
     install(DIRECTORY "${BANEWFN_PACKAGE_CONF_SOURCE}/"
-        DESTINATION conf
+        DESTINATION "${BANEWFN_INSTALL_CONFDIR}"
+    )
+    # Keep a fallback rc beside the installed module configs; the system rc in
+    # etc remains the normal override point for Linux installs.
+    install(FILES "${BANEWFN_GENERATED_RC}"
+        DESTINATION "${BANEWFN_INSTALL_CONFDIR}"
     )
 else()
-    message(WARNING "banewfn: conf source directory does not exist and will not be packaged: ${BANEWFN_PACKAGE_CONF_SOURCE}")
+    message(WARNING "banewfn: conf source directory does not exist and will not be installed: ${BANEWFN_PACKAGE_CONF_SOURCE}")
 endif()
+
+install(FILES "${BANEWFN_GENERATED_RC}"
+    DESTINATION "${BANEWFN_INSTALL_RCDIR}"
+)
 
 if(IS_DIRECTORY "${BANEWFN_PACKAGE_SCRIPT_SOURCE}")
     install(DIRECTORY "${BANEWFN_PACKAGE_SCRIPT_SOURCE}/"
-        DESTINATION scripts
+        DESTINATION "${BANEWFN_INSTALL_SCRIPTSDIR}"
         PATTERN "release" EXCLUDE
     )
 else()
-    message(WARNING "banewfn: scripts source directory does not exist and will not be packaged: ${BANEWFN_PACKAGE_SCRIPT_SOURCE}")
+    message(WARNING "banewfn: scripts source directory does not exist and will not be installed: ${BANEWFN_PACKAGE_SCRIPT_SOURCE}")
 endif()
 
 if(IS_DIRECTORY "${BANEWFN_PACKAGE_DOC_SOURCE}")
     file(GLOB BANEWFN_PACKAGE_MANUALS "${BANEWFN_PACKAGE_DOC_SOURCE}/${BANEWFN_PACKAGE_DOC_PATTERN}")
     if(BANEWFN_PACKAGE_MANUALS)
         install(DIRECTORY "${BANEWFN_PACKAGE_DOC_SOURCE}/"
-            DESTINATION docs/out
+            DESTINATION "${BANEWFN_INSTALL_DOCDIR}"
             FILES_MATCHING
             PATTERN "${BANEWFN_PACKAGE_DOC_PATTERN}"
         )
     else()
-        message(WARNING "banewfn: no manuals matched ${BANEWFN_PACKAGE_DOC_PATTERN} under ${BANEWFN_PACKAGE_DOC_SOURCE}; docs/out will be empty in packages")
+        message(WARNING "banewfn: no manuals matched ${BANEWFN_PACKAGE_DOC_PATTERN} under ${BANEWFN_PACKAGE_DOC_SOURCE}; docs will be empty in packages")
     endif()
 else()
-    message(WARNING "banewfn: docs source directory does not exist and will not be packaged: ${BANEWFN_PACKAGE_DOC_SOURCE}")
+    message(WARNING "banewfn: docs source directory does not exist and will not be installed: ${BANEWFN_PACKAGE_DOC_SOURCE}")
 endif()
 
 # Packaging (CPack)

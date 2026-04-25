@@ -10,6 +10,16 @@ Software Page: [BaneWfn](https://bane-dysta.top/software/banewfn/)
 
 Manual: [BaneWfn_Manual](docs/BaneWfn_Project_Manual_zh.md)
 
+
+## Wiki
+
+仓库内已经整理了一套适合 GitHub 直接浏览的 wiki 目录，无需额外构建即可阅读：
+
+- [Wiki 首页](wiki/Home.md)
+- [完整手册（单页版）](wiki/Full-Manual.md)
+
+如果后续需要迁移到 GitHub 自带 Wiki，也可以直接复用 `wiki/` 目录中的 `Home.md`、`_Sidebar.md` 与各章节页面。
+
 ## 构建
 
 如果使用 CMake，可以采用下面的方式构建：

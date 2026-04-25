@@ -31,6 +31,30 @@ private:
 
 TEST_SUITE("InputParser") {
 
+TEST_CASE("parseInpFileDetailed exposes named fields and load status") {
+    TempDir temp;
+    const auto inpFile = temp.path() / "named_result.inp";
+
+    writeTextFile(inpFile, R"(wfn=demo.fchk
+core=2
+
+[demo]
+value 1
+end
+)");
+
+    ParsedInputFile parsed = InputParser::parseInpFileDetailed(inpFile.string());
+
+    CHECK(parsed.loaded);
+    CHECK(parsed.wfnFile == "demo.fchk");
+    CHECK(parsed.cores == 2);
+    REQUIRE(parsed.tasks.size() == 1);
+    CHECK(parsed.tasks[0].moduleName == "demo");
+
+    ParsedInputFile missing = InputParser::parseInpFileDetailed((temp.path() / "missing.inp").string());
+    CHECK_FALSE(missing.loaded);
+}
+
 TEST_CASE("parseInpFileWithWfnAndCoresAndVars parses headers modules rebase and anonymous command blocks") {
     TempDir temp;
     const auto inpFile = temp.path() / "workflow.inp";

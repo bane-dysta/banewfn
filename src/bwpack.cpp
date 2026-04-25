@@ -144,8 +144,11 @@ int main(int argc, char* argv[]) {
     std::cout << "Using conf directory: " << confDir << "\n";
 
     // Parse bw file to find required modules
-    auto parseResult = InputParser::parseInpFileWithWfnAndCoresAndVars(inputFile);
-    std::vector<ModuleTask> tasks = std::get<0>(parseResult);
+    ParsedInputFile parsedInput = InputParser::parseInpFileDetailed(inputFile);
+    if (!parsedInput.loaded) {
+        return 1;
+    }
+    const std::vector<ModuleTask>& tasks = parsedInput.tasks;
 
     std::set<std::string> modules;
     for (const auto& t : tasks) {

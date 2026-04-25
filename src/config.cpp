@@ -334,6 +334,21 @@ std::string findConfigFile(const std::string& /*executablePath*/) {
     
     // Priority 3: ~/.bane/wfn
     searchPaths.push_back(expandPath("~/.bane/wfn/banewfn.rc"));
+
+#ifndef PLATFORM_WINDOWS
+    // Priority 4: system config installed by CMake, plus prefix-relative
+    // fallbacks for staged installs and non-default prefixes.
+#ifdef BANEWFN_SYSTEM_RC_PATH
+    searchPaths.push_back(BANEWFN_SYSTEM_RC_PATH);
+#endif
+#ifdef BANEWFN_SYSTEM_SHARE_RC_PATH
+    searchPaths.push_back(BANEWFN_SYSTEM_SHARE_RC_PATH);
+#endif
+    if (!execDir.empty()) {
+        searchPaths.push_back(execDir + "/../etc/banewfn/banewfn.rc");
+        searchPaths.push_back(execDir + "/../share/banewfn/conf/banewfn.rc");
+    }
+#endif
     
     std::cout << "Searching for banewfn.rc in the following locations:" << std::endl;
     for (const auto& path : searchPaths) {
@@ -397,7 +412,18 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile, bool requir
             } else if (key == "confpath") {
                 config.confPath = expandPath(value);
             } else if (key == "cores") {
-                config.cores = std::stoi(value);
+                try {
+                    int parsedCores = std::stoi(value);
+                    if (parsedCores < 0) {
+                        std::cerr << "Warning: Invalid negative cores value in config file: "
+                                  << value << ". Keeping default: " << config.cores << std::endl;
+                    } else {
+                        config.cores = parsedCores;
+                    }
+                } catch (const std::exception&) {
+                    std::cerr << "Warning: Invalid cores value in config file: "
+                              << value << ". Keeping default: " << config.cores << std::endl;
+                }
             } else if (key == "gitbash_exec") {
 #ifdef PLATFORM_WINDOWS
                 config.gitbashExec = expandPath(value);

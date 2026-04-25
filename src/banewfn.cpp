@@ -823,17 +823,22 @@ public:
         return success;
     }
     
-    // Execute all module tasks
-    bool executeAllTasks(const std::string& inpFile, const std::string& wfnFile, 
-                        int cores, const ExecutionOptions& options) {
-        // Parse inp file, get all tasks, optional wfn file, core count, and custom variables
-        auto parseResult = InputParser::parseInpFileWithWfnAndCoresAndVars(inpFile);
-        std::vector<ModuleTask> tasks = std::get<0>(parseResult);
-        std::string inputWfnFile = std::get<1>(parseResult);
-        int inputCores = std::get<2>(parseResult);
-        std::map<std::string, std::vector<std::string>> fileVars = std::get<3>(parseResult);
-        bool inputDryrun = std::get<4>(parseResult);
-        bool inputNogui = std::get<5>(parseResult);
+    // Execute all module tasks from an already parsed input file.
+    // Keeping the parse result explicit avoids reparsing the same file and makes
+    // future input-header additions less error-prone than tuple unpacking.
+    bool executeAllTasks(const ParsedInputFile& parsedInput, const std::string& inpFile,
+                        const std::string& wfnFile, int cores, const ExecutionOptions& options) {
+        if (!parsedInput.loaded) {
+            std::cerr << "Error: Input file was not loaded successfully: " << inpFile << std::endl;
+            return false;
+        }
+
+        std::vector<ModuleTask> tasks = parsedInput.tasks;
+        const std::string& inputWfnFile = parsedInput.wfnFile;
+        int inputCores = parsedInput.cores;
+        const auto& fileVars = parsedInput.customVars;
+        bool inputDryrun = parsedInput.dryrun;
+        bool inputNogui = parsedInput.nogui;
 
         ExecutionOptions effectiveOptions = options;
         if (inputDryrun) {
@@ -1038,6 +1043,12 @@ public:
         return allSuccess;
     }
     
+    bool executeAllTasks(const std::string& inpFile, const std::string& wfnFile,
+                        int cores, const ExecutionOptions& options) {
+        ParsedInputFile parsedInput = InputParser::parseInpFileDetailed(inpFile);
+        return executeAllTasks(parsedInput, inpFile, wfnFile, cores, options);
+    }
+
     int getCores() const { return configManager.getCores(); }
 };
 
@@ -1296,12 +1307,16 @@ int main(int argc, char* argv[]) {
     }
     
     // Check if input file contains wfn definition, core setting, and custom variables
-    auto parseResult = InputParser::parseInpFileWithWfnAndCoresAndVars(inpFile);
-    std::string inputWfnFile = std::get<1>(parseResult);
-    int inputCores = std::get<2>(parseResult);
-    std::map<std::string, std::vector<std::string>> inputVars = std::get<3>(parseResult);
-    bool inputDryrun = std::get<4>(parseResult);
-    bool inputNogui = std::get<5>(parseResult);
+    ParsedInputFile parsedInput = InputParser::parseInpFileDetailed(inpFile);
+    if (!parsedInput.loaded) {
+        return 1;
+    }
+
+    const std::string& inputWfnFile = parsedInput.wfnFile;
+    int inputCores = parsedInput.cores;
+    const auto& inputVars = parsedInput.customVars;
+    bool inputDryrun = parsedInput.dryrun;
+    bool inputNogui = parsedInput.nogui;
 
     if (inputDryrun) {
         options.dryrun = true;
@@ -1370,7 +1385,7 @@ int main(int argc, char* argv[]) {
     }
     
     // Execute all module tasks
-    if (!generator.executeAllTasks(inpFile, wfnFile, cores, options)) {
+    if (!generator.executeAllTasks(parsedInput, inpFile, wfnFile, cores, options)) {
         pauseIfWindowsDryRun(shouldPauseOnExit);
         return 1;
     }

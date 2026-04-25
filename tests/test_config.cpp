@@ -63,6 +63,35 @@ TEST_CASE("loadBaneWfnConfig parses rc values and expands HOME references") {
     CHECK(cfg.cores == 8);
 }
 
+TEST_CASE("loadBaneWfnConfig ignores invalid cores instead of throwing") {
+    TempDir temp;
+
+    const auto rcFile = temp.path() / "banewfn.rc";
+    writeTextFile(rcFile,
+                  "Multiwfn_exec = Multiwfn\n"
+                  "cores = not-a-number\n");
+
+    ConfigManager manager;
+    REQUIRE(manager.loadBaneWfnConfig(rcFile.string()));
+
+    CHECK(manager.getCores() == 0);
+}
+
+TEST_CASE("loadBaneWfnConfig defaults optional cores to zero") {
+    TempDir temp;
+
+    const auto rcFile = temp.path() / "banewfn.rc";
+    writeTextFile(rcFile,
+                  "Multiwfn_exec = Multiwfn\n"
+                  "confpath = ~/.bane/wfn\n");
+
+    ConfigManager manager;
+    REQUIRE(manager.loadBaneWfnConfig(rcFile.string()));
+
+    CHECK(manager.getConfig().cores == 0);
+    CHECK(manager.getCores() == 0);
+}
+
 TEST_CASE("loadModuleConfigFromText parses sections commands defaults and quit block") {
     const std::string confText = R"(
 # module comment

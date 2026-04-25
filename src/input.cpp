@@ -620,21 +620,22 @@ void InputParser::resolveInteractiveCustomVars(std::map<std::string, std::vector
     materializeAllListVariables(customVars);
 }
 
-// Parse inp file, return all module tasks, optional wfn file, core count, custom variables, and header execution flags
-std::tuple<std::vector<ModuleTask>, std::string, int,
-           std::map<std::string, std::vector<std::string>>, bool, bool>
-InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
-    std::vector<ModuleTask> tasks;
-    std::string wfnFile;
-    int cores = -1;  // -1 means not specified
-    std::map<std::string, std::vector<std::string>> customVars;
-    bool dryrun = false;
-    bool nogui = false;
+// Parse inp file, return named parse result with module tasks, headers, variables, and load status
+ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
+    ParsedInputFile parsed;
+    std::vector<ModuleTask>& tasks = parsed.tasks;
+    std::string& wfnFile = parsed.wfnFile;
+    int& cores = parsed.cores;  // -1 means not specified
+    std::map<std::string, std::vector<std::string>>& customVars = parsed.customVars;
+    bool& dryrun = parsed.dryrun;
+    bool& nogui = parsed.nogui;
+
     std::ifstream file(inpFile);
     if (!file.is_open()) {
         std::cerr << "Error: Cannot open inp file: " << inpFile << std::endl;
-        return {tasks, wfnFile, cores, customVars, dryrun, nogui};
+        return parsed;
     }
+    parsed.loaded = true;
     
     std::string line;
     ModuleTask currentTask;
@@ -906,7 +907,15 @@ InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
     }
     
     file.close();
-    return {tasks, wfnFile, cores, customVars, dryrun, nogui};
+    return parsed;
+}
+
+// Parse inp file, return all module tasks, optional wfn file, core count, custom variables, and header execution flags (backward compatibility)
+std::tuple<std::vector<ModuleTask>, std::string, int,
+           std::map<std::string, std::vector<std::string>>, bool, bool>
+InputParser::parseInpFileWithWfnAndCoresAndVars(const std::string& inpFile) {
+    const ParsedInputFile parsed = parseInpFileDetailed(inpFile);
+    return {parsed.tasks, parsed.wfnFile, parsed.cores, parsed.customVars, parsed.dryrun, parsed.nogui};
 }
 
 // Parse inp file, return all module tasks, optional wfn file, and core count (backward compatibility)
