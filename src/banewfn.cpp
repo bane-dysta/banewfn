@@ -6,10 +6,12 @@
 #include <vector>
 #include <set>
 #include <algorithm>
+#include <filesystem>
 #include <iomanip>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <system_error>
 #include <unistd.h>
 #include <sys/stat.h>
 #include "config.h"
@@ -277,6 +279,205 @@ static std::string getCommandScriptStem(const ModuleTask& task) {
 
     return stem;
 }
+
+class NewFileCollector {
+public:
+    using Snapshot = std::set<std::string>;
+
+    bool captureSnapshot(Snapshot& files) const {
+        files.clear();
+
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        const fs::path cwd = fs::current_path(ec);
+        if (ec) {
+            std::cerr << "Warning: collect cannot read current directory: " << ec.message() << std::endl;
+            return false;
+        }
+
+        fs::directory_iterator it(cwd, fs::directory_options::skip_permission_denied, ec);
+        const fs::directory_iterator end;
+        if (ec) {
+            std::cerr << "Warning: collect cannot scan current directory: " << ec.message() << std::endl;
+            return false;
+        }
+
+        for (; it != end; it.increment(ec)) {
+            if (ec) {
+                std::cerr << "Warning: collect stopped scanning current directory: "
+                          << ec.message() << std::endl;
+                return false;
+            }
+
+            std::error_code typeEc;
+            if (it->is_regular_file(typeEc)) {
+                files.insert(it->path().filename().string());
+            }
+        }
+
+        return true;
+    }
+
+    bool rememberNewFilesSince(const Snapshot& before, const std::string& taskName) {
+        Snapshot after;
+        if (!captureSnapshot(after)) {
+            return false;
+        }
+
+        size_t addedCount = 0;
+        for (const auto& fileName : after) {
+            if (before.find(fileName) == before.end()) {
+                if (pendingFiles.insert(fileName).second) {
+                    ++addedCount;
+                }
+            }
+        }
+
+        if (addedCount > 0) {
+            std::cout << "collect: remembered " << addedCount << " new file(s) after "
+                      << taskName << "." << std::endl;
+        }
+
+        return true;
+    }
+
+    bool flushToDirectory(const std::string& rawTargetDir, bool dryrun) {
+        namespace fs = std::filesystem;
+
+        const std::string targetDir = Utils::trim(rawTargetDir);
+        if (targetDir.empty()) {
+            std::cerr << "Error: collect target directory is empty" << std::endl;
+            return false;
+        }
+
+        if (dryrun) {
+            std::cout << "Dry-run mode: collect(" << targetDir
+                      << ") skipped; no files were moved." << std::endl;
+            pendingFiles.clear();
+            return true;
+        }
+
+        if (pendingFiles.empty()) {
+            std::cout << "collect(" << targetDir << "): no new files to move." << std::endl;
+            return true;
+        }
+
+        std::error_code ec;
+        const fs::path cwd = fs::current_path(ec);
+        if (ec) {
+            std::cerr << "Error: collect cannot read current directory: " << ec.message() << std::endl;
+            return false;
+        }
+
+        const fs::path targetPath(targetDir);
+        ec.clear();
+        const bool targetExists = fs::exists(targetPath, ec);
+        if (ec) {
+            std::cerr << "Error: collect cannot inspect target path " << targetDir
+                      << ": " << ec.message() << std::endl;
+            return false;
+        }
+
+        if (targetExists) {
+            if (!fs::is_directory(targetPath, ec)) {
+                std::cerr << "Error: collect target exists but is not a directory: "
+                          << targetDir << std::endl;
+                return false;
+            }
+        } else {
+            fs::create_directories(targetPath, ec);
+            if (ec) {
+                std::cerr << "Error: collect cannot create target directory " << targetDir
+                          << ": " << ec.message() << std::endl;
+                return false;
+            }
+        }
+
+        bool ok = true;
+        size_t movedCount = 0;
+        std::set<std::string> remaining;
+
+        for (const auto& fileName : pendingFiles) {
+            const fs::path sourcePath = cwd / fileName;
+            const fs::path destPath = targetPath / sourcePath.filename();
+
+            std::error_code fileEc;
+            if (!fs::exists(sourcePath, fileEc) || !fs::is_regular_file(sourcePath, fileEc)) {
+                std::cerr << "Warning: collect source file disappeared, skipping: "
+                          << fileName << std::endl;
+                continue;
+            }
+
+            fileEc.clear();
+            if (fs::equivalent(sourcePath, destPath, fileEc)) {
+                std::cerr << "Warning: collect source and destination are the same, skipping: "
+                          << fileName << std::endl;
+                continue;
+            }
+
+            fileEc.clear();
+            if (fs::exists(destPath, fileEc)) {
+                std::cerr << "Warning: collect destination already exists, keeping source file: "
+                          << destPath.string() << std::endl;
+                remaining.insert(fileName);
+                ok = false;
+                continue;
+            }
+
+            std::string errorMessage;
+            if (moveFile(sourcePath, destPath, errorMessage)) {
+                ++movedCount;
+            } else {
+                std::cerr << "Warning: collect failed to move " << fileName << " to "
+                          << destPath.string() << ": " << errorMessage << std::endl;
+                remaining.insert(fileName);
+                ok = false;
+            }
+        }
+
+        pendingFiles.swap(remaining);
+
+        if (movedCount > 0) {
+            printSuccessLine("collect(" + targetDir + "): moved " +
+                             std::to_string(movedCount) + " file(s).");
+        } else if (ok) {
+            std::cout << "collect(" << targetDir << "): no files moved." << std::endl;
+        }
+
+        return ok;
+    }
+
+private:
+    static bool moveFile(const std::filesystem::path& sourcePath,
+                         const std::filesystem::path& destPath,
+                         std::string& errorMessage) {
+        namespace fs = std::filesystem;
+
+        std::error_code renameEc;
+        fs::rename(sourcePath, destPath, renameEc);
+        if (!renameEc) {
+            return true;
+        }
+
+        std::error_code copyEc;
+        fs::copy_file(sourcePath, destPath, fs::copy_options::none, copyEc);
+        if (copyEc) {
+            errorMessage = renameEc.message() + "; copy fallback failed: " + copyEc.message();
+            return false;
+        }
+
+        std::error_code removeEc;
+        fs::remove(sourcePath, removeEc);
+        if (removeEc) {
+            errorMessage = "copied but failed to remove original: " + removeEc.message();
+            return false;
+        }
+
+        return true;
+    }
+
+    std::set<std::string> pendingFiles;
+};
 
 class MultiwfnScriptGenerator {
 private:
@@ -1008,7 +1209,30 @@ public:
                 // Execute each module task in sequence, allowing wfn_rebase directives
                 // to switch the file provided to subsequent Multiwfn invocations.
                 std::string currentWfnFile = finalWfnFile;
-                for (const auto& task : fileTasks) {
+                NewFileCollector collector;
+
+                // Track files only for tasks that have a later collect(...)
+                // directive. This keeps workflows without collect unchanged and
+                // avoids remembering files produced after the final collect.
+                std::vector<bool> hasCollectAhead(fileTasks.size(), false);
+                bool seenCollectAhead = false;
+                for (size_t revIdx = fileTasks.size(); revIdx > 0; --revIdx) {
+                    const size_t taskIdx = revIdx - 1;
+                    hasCollectAhead[taskIdx] = seenCollectAhead;
+                    if (fileTasks[taskIdx].isCollect) {
+                        seenCollectAhead = true;
+                    }
+                }
+
+                for (size_t taskIdx = 0; taskIdx < fileTasks.size(); ++taskIdx) {
+                    const auto& task = fileTasks[taskIdx];
+                    if (task.isCollect) {
+                        if (!collector.flushToDirectory(task.collectDir, effectiveOptions.dryrun)) {
+                            allSuccess = false;
+                        }
+                        continue;
+                    }
+
                     if (task.isWfnRebase) {
                         std::string target = Utils::trim(task.wfnRebaseFile);
                         if (target.empty()) {
@@ -1027,7 +1251,18 @@ public:
                         continue;
                     }
 
+                    NewFileCollector::Snapshot beforeFiles;
+                    bool shouldTrackNewFiles = hasCollectAhead[taskIdx] && !effectiveOptions.dryrun;
+                    if (shouldTrackNewFiles) {
+                        shouldTrackNewFiles = collector.captureSnapshot(beforeFiles);
+                    }
+
                     if (!executeModuleTask(task, currentWfnFile, finalCores, effectiveOptions)) {
+                        allSuccess = false;
+                    }
+
+                    if (shouldTrackNewFiles &&
+                        !collector.rememberNewFilesSince(beforeFiles, getTaskDisplayName(task))) {
                         allSuccess = false;
                     }
                 }
@@ -1073,6 +1308,7 @@ void printUsage(const char* progName) {
     std::cout << "  %command ... end    Run shell/batch post-commands\n";
     std::cout << "  %preraw ... end/wait Send literal Multiwfn commands before [main]\n";
     std::cout << "  %raw ... end/wait   Send literal Multiwfn commands\n";
+    std::cout << "  collect(dir);       Move files newly created by preceding blocks into dir\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << progName << " input.inp molecule.fchk\n";
     std::cout << "  " << progName << " -w molecule.fchk input.inp\n";

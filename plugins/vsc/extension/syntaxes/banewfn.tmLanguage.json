@@ -7,6 +7,7 @@
     { "include": "#comments" },
     { "include": "#headers" },
     { "include": "#blocks" },
+    { "include": "#directives" },
     { "include": "#module-params" },
     { "include": "#keywords" },
     { "include": "#variables" },
@@ -62,7 +63,7 @@
     "module-params": {
       "patterns": [
         {
-          "match": "^\\s*(?!\\[|%|end\\b|wait\\b|wfn|core|dryrun|nogui|wfn_rebase)([a-zA-Z0-9_\\-\\+]+)(?:\\s+(.*))?$",
+          "match": "^\\s*(?!\\[|%|end\\b|wait\\b|collect\\s*\\(|wfn|core|dryrun|nogui|wfn_rebase)([a-zA-Z0-9_\\-\\+]+)(?:\\s+(.*))?$",
           "captures": {
             "1": { "name": "variable.parameter.banewfn" },
             "2": {
@@ -169,6 +170,24 @@
         {
           "name": "variable.other.banewfn",
           "match": "\\$(?:[a-zA-Z0-9_]+|\\{[^\\}]+\\})"
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "match": "^\\s*(collect)\\s*(\\()([^)]*)(\\))\\s*;?",
+          "captures": {
+            "1": { "name": "keyword.control.directive.collect.banewfn" },
+            "2": { "name": "punctuation.definition.arguments.begin.banewfn" },
+            "3": {
+              "patterns": [
+                { "include": "#variables" },
+                { "name": "string.unquoted.banewfn", "match": ".*" }
+              ]
+            },
+            "4": { "name": "punctuation.definition.arguments.end.banewfn" }
+          }
         }
       ]
     },

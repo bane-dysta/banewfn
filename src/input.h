@@ -23,7 +23,13 @@ struct ModuleTask {
     bool isWfnRebase;
     std::string wfnRebaseFile;
 
-    ModuleTask() : useWait(false), blockIndex(0), isWfnRebase(false) {}
+    // Special directive: collect(path);
+    // If isCollect is true, this task will NOT invoke Multiwfn or shell commands.
+    // Instead, it flushes all files newly created by preceding tasks into collectDir.
+    bool isCollect;
+    std::string collectDir;
+
+    ModuleTask() : useWait(false), blockIndex(0), isWfnRebase(false), isCollect(false) {}
 };
 
 // Execution options

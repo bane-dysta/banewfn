@@ -124,6 +124,46 @@ end
 
 相比把这些步骤拆成两个脚本手工接力，这种写法可以把输入切换关系直接保留在一份文件里，后期复查时也更容易看懂整条数据流。
 
+
+## `collect(...)` 自动归档示例
+
+当一个工作流会连续产生多批文件，而你只想在某个节点把此前所有新增产物整体收进目录时，可以使用 `collect(...)`，不必在每个模块的 `%command` 中反复写 `mkdir` 和 `mv`。
+
+```ini
+wfn=sample.fchk
+state=1
+
+[excit]
+%process
+    nto state ${state}
+end
+
+%command
+#!/bin/bash
+cat << EOF > TEST.txt
+abc
+EOF
+end
+
+wfn_rebase=${input}_NTO${state}.fch
+
+[fmo]
+%process
+    orb index h
+    orb index l
+end
+
+collect(NTOs);
+```
+
+在这个例子里，`[excit]`、它后面的 `%command` 以及 `[fmo]` 运行后新出现在当前目录的普通文件都会先被累计。执行到 `collect(NTOs);` 时，程序会创建 `NTOs/`，并把这些累计文件移动进去。若要避免不同输入文件之间目录名冲突，可以写成：
+
+```ini
+collect(${input}_NTOs);
+```
+
+这样每个输入文件都会把自己的新增产物归档到独立目录中。
+
 ## 自包含 `.bwc` 工作流示例
 例如fmo.bw：
 

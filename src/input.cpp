@@ -43,6 +43,49 @@ bool tryParseInputBoolFlag(const std::string& rawValue, const std::string& flagN
     return false;
 }
 
+bool tryParseCollectDirective(const std::string& trimmedLine, std::string& collectDir) {
+    const std::string line = Utils::trim(trimmedLine);
+    const std::string keyword = "collect";
+
+    if (line.rfind(keyword, 0) != 0) {
+        return false;
+    }
+
+    size_t pos = keyword.size();
+    while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos]))) {
+        ++pos;
+    }
+
+    if (pos >= line.size() || line[pos] != '(') {
+        return false;
+    }
+
+    const size_t openParen = pos;
+    const size_t closeParen = line.find_last_of(')');
+    if (closeParen == std::string::npos || closeParen <= openParen) {
+        return false;
+    }
+
+    pos = closeParen + 1;
+    while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos]))) {
+        ++pos;
+    }
+
+    if (pos < line.size() && line[pos] == ';') {
+        ++pos;
+        while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos]))) {
+            ++pos;
+        }
+    }
+
+    if (pos != line.size()) {
+        return false;
+    }
+
+    collectDir = Utils::trimQuotes(Utils::trim(line.substr(openParen + 1, closeParen - openParen - 1)));
+    return !collectDir.empty();
+}
+
 bool parseNextPlaceholder(const std::string& text, size_t startPos, ParsedPlaceholder& out) {
     const size_t pos = text.find('$', startPos);
     if (pos == std::string::npos) {
@@ -473,6 +516,11 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
             task.wfnRebaseFile = replaceInputPlaceholders(task.wfnRebaseFile, wfnFile, customVars);
         }
 
+        // Apply replacement to collect directive target directory
+        if (task.isCollect) {
+            task.collectDir = replaceInputPlaceholders(task.collectDir, wfnFile, customVars);
+        }
+
         // Apply replacement to parameter values
         for (auto& param : task.params) {
             param.second = replaceInputPlaceholders(param.second, wfnFile, customVars);
@@ -769,6 +817,20 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
         if (inRawMode && !isSpecialKeyword) {
             currentTask.rawCommands.push_back(line);
             continue;
+        }
+
+        // Special directive: collect(path);
+        // Only recognized between completed blocks. Inside %process/%raw/%command
+        // it remains ordinary block content, so existing block syntax stays explicit.
+        if (!hasPendingTask() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
+            std::string collectDir;
+            if (tryParseCollectDirective(trimmed, collectDir)) {
+                ModuleTask collectTask;
+                collectTask.isCollect = true;
+                collectTask.collectDir = collectDir;
+                tasks.push_back(collectTask);
+                continue;
+            }
         }
 
         // For non-command mode, skip empty lines

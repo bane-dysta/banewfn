@@ -85,12 +85,14 @@ echo before
 
 echo after
 end
+
+collect(${prefix}_files);
 )");
 
     auto [tasks, wfnFile, cores, customVars, dryrun, nogui] =
         InputParser::parseInpFileWithWfnAndCoresAndVars(inpFile.string());
 
-    REQUIRE(tasks.size() == 3);
+    REQUIRE(tasks.size() == 4);
     CHECK(wfnFile == "demo.fchk");
     CHECK(cores == 16);
     CHECK(dryrun);
@@ -130,6 +132,61 @@ end
         "echo after"
     };
     CHECK(commandTask.commands == expectedCommands);
+
+    const auto& collectTask = tasks[3];
+    CHECK(collectTask.isCollect);
+    CHECK(collectTask.collectDir == "${prefix}_files");
+}
+
+TEST_CASE("collect directive follows explicit ended blocks") {
+    TempDir temp;
+    const auto inpFile = temp.path() / "collect_process.inp";
+
+    writeTextFile(inpFile, R"(wfn=test.fchk
+[excit]
+%process
+    nto state 1
+end
+
+%command
+#!/bin/bash
+echo abc > TEST.txt
+end
+
+wfn_rebase=${input}_NTO1.fch
+
+[fmo]
+%process
+    orb index h
+    orb index l
+end
+
+collect(NTOs);
+)");
+
+    ParsedInputFile parsed = InputParser::parseInpFileDetailed(inpFile.string());
+
+    REQUIRE(parsed.tasks.size() == 5);
+    CHECK(parsed.tasks[0].moduleName == "excit");
+    REQUIRE(parsed.tasks[0].postProcessSteps.size() == 1);
+    CHECK(parsed.tasks[0].postProcessSteps[0].first == "nto");
+
+    CHECK(parsed.tasks[1].moduleName.empty());
+    REQUIRE(parsed.tasks[1].commands.size() == 2);
+    CHECK(parsed.tasks[1].commands[0] == "#!/bin/bash");
+    CHECK(parsed.tasks[1].commands[1] == "echo abc > TEST.txt");
+
+    CHECK(parsed.tasks[2].isWfnRebase);
+
+    CHECK(parsed.tasks[3].moduleName == "fmo");
+    REQUIRE(parsed.tasks[3].postProcessSteps.size() == 2);
+    CHECK(parsed.tasks[3].postProcessSteps[0].first == "orb");
+    CHECK(parsed.tasks[3].postProcessSteps[0].second.at("index") == "h");
+    CHECK(parsed.tasks[3].postProcessSteps[1].first == "orb");
+    CHECK(parsed.tasks[3].postProcessSteps[1].second.at("index") == "l");
+
+    CHECK(parsed.tasks[4].isCollect);
+    CHECK(parsed.tasks[4].collectDir == "NTOs");
 }
 
 TEST_CASE("standalone raw and command blocks preserve blank lines comments and wait semantics") {
@@ -193,6 +250,10 @@ TEST_CASE("applyPlaceholderReplacement handles input custom file and reserved ou
     rebaseTask.wfnRebaseFile = "${prefix}_${input}_${state}.fchk";
 
     std::vector<ModuleTask> tasks = {task, rebaseTask};
+    ModuleTask collectTask;
+    collectTask.isCollect = true;
+    collectTask.collectDir = "${prefix}_${input}_dir";
+    tasks.push_back(collectTask);
     const std::map<std::string, std::vector<std::string>> customVars = {
         {"prefix", {"final"}},
         {"state", {"1", "2"}}
@@ -218,6 +279,7 @@ TEST_CASE("applyPlaceholderReplacement handles input custom file and reserved ou
     };
     CHECK(tasks[0].commands == expectedCommands);
     CHECK(tasks[1].wfnRebaseFile == "final_sample_1.fchk");
+    CHECK(tasks[2].collectDir == "final_sample_dir");
 }
 
 TEST_CASE("parseInpFileWithWfnAndCoresAndVars accepts var* and len(var) headers") {
