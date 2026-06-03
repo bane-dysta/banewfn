@@ -236,7 +236,7 @@ jobs:
           VERSION="$(node -p "require('./package.json').version")"
           OUT_DIR="$GITHUB_WORKSPACE/dist/vscode-extension"
           mkdir -p "$OUT_DIR"
-          npx --yes @vscode/vsce package --no-dependencies --packagePath "$OUT_DIR/banewfn-syntax-${VERSION}.vsix"
+          npx --yes @vscode/vsce package --no-dependencies --out "$OUT_DIR/banewfn-syntax-${VERSION}.vsix"
 
       - name: Show VS Code extension files
         run: find dist/vscode-extension -maxdepth 2 -type f | sort
