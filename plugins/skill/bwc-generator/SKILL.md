@@ -1,5 +1,5 @@
 ---
-name: banewfn-bwc-generator
+name: bwc-generator
 description: generate, edit, validate, and package banewfn .bw and .bwc workflow scripts for multiwfn automation. use when the user asks to write, modify, debug, style, or bundle banewfn/bwpack/bwc scripts; translate multiwfn menu workflows into banewfn modules, raw blocks, command blocks, or self-contained inline-conf .bwc files; or imitate the user's uploaded bwc conventions for esp, alie, leae, fmo, nto, hole-electron, ifct, nci, iri, igmh, nics, cube plotting, charges, and related workflows.
 ---
 

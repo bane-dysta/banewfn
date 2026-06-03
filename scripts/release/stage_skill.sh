@@ -7,7 +7,7 @@ set -euo pipefail
 # complete, self-contained skill by copying those references at release time.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SKILL_NAME="banewfn-bwc-generator"
+SKILL_NAME="bwc-generator"
 SKILL_SRC="$ROOT_DIR/plugins/skill/$SKILL_NAME"
 OUT_DIR="${1:-$ROOT_DIR/dist/skill}"
 STAGE_ROOT="$OUT_DIR/stage"

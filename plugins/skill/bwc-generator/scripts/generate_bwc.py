@@ -113,7 +113,7 @@ def bundle_inline_conf(base_text: str, confdir: Path, allow_missing: bool = Fals
             + f" in {confdir}"
         )
 
-    chunks = [base.rstrip(), "", "# Bundled by banewfn-bwc-generator", f"# ConfDir: {confdir}", ""]
+    chunks = [base.rstrip(), "", "# Bundled by bwc-generator", f"# ConfDir: {confdir}", ""]
     for module in modules:
         conf_file = confdir / f"{module}.conf"
         if not conf_file.is_file():
