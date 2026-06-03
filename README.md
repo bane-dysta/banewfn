@@ -12,13 +12,7 @@ Manual: [BaneWfn_Manual](docs/BaneWfn_Project_Manual_zh.md)
 
 
 ## Wiki
-
-仓库内已经整理了一套适合 GitHub 直接浏览的 wiki 目录，无需额外构建即可阅读：
-
 - [Wiki 首页](wiki/Home.md)
-- [完整手册（单页版）](wiki/Full-Manual.md)
-
-如果后续需要迁移到 GitHub 自带 Wiki，也可以直接复用 `wiki/` 目录中的 `Home.md`、`_Sidebar.md` 与各章节页面。
 
 ## 构建
 
@@ -51,67 +45,6 @@ make install
 cmake -S . -B build -DBANEWFN_BUILD_TESTS=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
-```
-
-## 发布
-
-项目现在提供了基于 `CMakePresets.json` + `CPack` 的发布流：
-
-```bash
-cmake --workflow --preset linux-release
-cmake --workflow --preset windows-release
-```
-
-输出位置：
-
-- Linux 自解压安装包：`release/linux-release/`（`STGZ`，即 `.sh` 内嵌 `tar.gz`）
-- Windows 便携发布包：`release/windows-release/`（`ZIP`）
-
-包内容包括：
-
-- `banewfn` / `banewfn.exe`
-- `bwpack` / `bwpack.exe`
-- `conf/`
-- `scripts/`
-- `docs/out/` 下的 PDF 手册
-
-如果你的最新 `conf` 或手册不在仓库默认路径，而是在别的位置单独维护，可以在 configure 时覆盖下面两个变量：
-
-- `BANEWFN_PACKAGE_CONF_SOURCE`
-- `BANEWFN_PACKAGE_DOC_SOURCE`
-
-例如在 WSL 中可写成 `/mnt/c/...` 路径，然后执行：
-
-```bash
-cmake --preset windows-release \
-  -DBANEWFN_PACKAGE_CONF_SOURCE=/mnt/c/path/to/conf \
-  -DBANEWFN_PACKAGE_DOC_SOURCE=/mnt/c/path/to/docs/out
-cmake --build --preset windows-release
-cpack --preset windows-release
-```
-
-这样二进制仍然从当前环境构建，但打包时会读取你单独维护的最新 `conf`/手册，避免“二进制和资源文件不在同一边更新”的问题。
-
-如果你还想继续保留 Inno Setup 作为 Windows 安装器，建议不要再让 `.iss` 直接从仓库根目录抓文件，而是先把 Windows 发布内容 stage 成一个统一目录：
-
-```bash
-cmake --install build/windows-release --prefix release/windows-release/stage
-# 或直接 stage 到 Windows 盘，方便 Inno Setup 读取
-cmake --install build/windows-release --prefix /mnt/d/banewfn-stage
-```
-
-默认会生成 `release/windows-release/stage/`。如果你的仓库在 WSL 的 Linux 文件系统里，更推荐直接 stage 到 `/mnt/c/...` 或 `/mnt/d/...`，然后让 Inno Setup 只读取这个 stage 目录里的 `banewfn.exe`、`bwpack.exe`、`conf/`、`scripts/` 和 `docs/out/`，这样 exe、脚本、配置和手册永远来自同一份发布树。
-
-Windows 交叉编译预设依赖 MinGW-w64，例如：
-
-```bash
-sudo apt install mingw-w64
-```
-
-如果需要更新手册 PDF，可先执行：
-
-```bash
-./docs/build.sh
 ```
 
 ## 快速开始

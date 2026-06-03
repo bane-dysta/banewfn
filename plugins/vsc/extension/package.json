@@ -2,7 +2,7 @@
   "name": "banewfn-syntax",
   "displayName": "BaneWfn Syntax",
   "description": "Syntax highlighting and workflow tools for BaneWfn (.bw/.bwc), including run, bwpack, and related conf navigation.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "publisher": "bane-dysta",
   "engines": {
     "vscode": "^1.80.0"

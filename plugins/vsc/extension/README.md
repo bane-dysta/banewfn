@@ -38,3 +38,7 @@ This extension adds:
 ## 1.1.1
 
 - Fixed Windows PowerShell execution for `banewfn` and `bwpack` by switching Run/Pack to VS Code process tasks instead of shell-quoted terminal text.
+
+## 1.1.2
+
+- Added collect(); syntax 
