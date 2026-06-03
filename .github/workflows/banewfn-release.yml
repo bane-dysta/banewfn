@@ -216,6 +216,38 @@ jobs:
           if-no-files-found: error
           path: dist/windows-installer/*.exe
 
+  build-vscode-extension:
+    name: Build VS Code extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Package VS Code extension
+        working-directory: plugins/vsc/extension
+        run: |
+          set -euxo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          OUT_DIR="$GITHUB_WORKSPACE/dist/vscode-extension"
+          mkdir -p "$OUT_DIR"
+          npx --yes @vscode/vsce package --no-dependencies --packagePath "$OUT_DIR/banewfn-syntax-${VERSION}.vsix"
+
+      - name: Show VS Code extension files
+        run: find dist/vscode-extension -maxdepth 2 -type f | sort
+
+      - name: Upload VS Code extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          if-no-files-found: error
+          path: dist/vscode-extension/*.vsix
+
   publish-release:
     name: Publish GitHub release
     runs-on: ubuntu-latest
@@ -224,6 +256,7 @@ jobs:
       - build-linux-release
       - build-windows-release
       - build-windows-installer
+      - build-vscode-extension
     if: github.event_name == 'push'
     permissions:
       contents: write
@@ -254,6 +287,7 @@ jobs:
             dist/linux-release/* \
             dist/windows-release/* \
             dist/windows-installer/* \
+            dist/vscode-extension/* \
             dist/manual-pdf/* \
             --repo "$GH_REPO" \
             --target "$RELEASE_TARGET" \
