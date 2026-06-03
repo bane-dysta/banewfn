@@ -216,6 +216,29 @@ jobs:
           if-no-files-found: error
           path: dist/windows-installer/*.exe
 
+  build-bwc-skill:
+    name: Build BWC generator skill
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package BWC generator skill
+        run: ./scripts/release/stage_skill.sh
+
+      - name: Show skill package files
+        run: find dist/skill -maxdepth 3 -type f | sort
+
+      - name: Upload BWC generator skill artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bwc-skill
+          if-no-files-found: error
+          path: |
+            dist/skill/*.zip
+            dist/skill/*.sha256
+
   build-vscode-extension:
     name: Build VS Code extension
     runs-on: ubuntu-latest
@@ -257,6 +280,7 @@ jobs:
       - build-windows-release
       - build-windows-installer
       - build-vscode-extension
+      - build-bwc-skill
     if: github.event_name == 'push'
     permissions:
       contents: write
@@ -288,6 +312,7 @@ jobs:
             dist/windows-release/* \
             dist/windows-installer/* \
             dist/vscode-extension/* \
+            dist/bwc-skill/* \
             dist/manual-pdf/* \
             --repo "$GH_REPO" \
             --target "$RELEASE_TARGET" \

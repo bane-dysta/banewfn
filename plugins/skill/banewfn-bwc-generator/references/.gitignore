@@ -1,0 +1,4 @@
+# These directories are generated during release packaging from the BaneWfn repo root.
+/conf/
+/banewfn-wiki/
+/examples/user-bwc/

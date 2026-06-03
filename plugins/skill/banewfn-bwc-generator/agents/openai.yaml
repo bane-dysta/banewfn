@@ -1,0 +1,3 @@
+interface:
+  display_name: "BaneWfn BWC Generator"
+  short_description: "Generate and validate BaneWfn .bw/.bwc workflow scripts in the user's style."

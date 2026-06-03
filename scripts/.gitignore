@@ -1,3 +1,7 @@
 bash
 bat
-release
+release/*
+!release/
+!release/cmake.sh
+!release/stage_windows_release.sh
+!release/stage_skill.sh
