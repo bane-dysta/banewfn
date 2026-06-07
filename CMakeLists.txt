@@ -54,6 +54,13 @@ set(CORE_HEADERS
 
 add_library(banewfn_core OBJECT ${CORE_SOURCES} ${CORE_HEADERS})
 
+# GCC 8 and older keep std::filesystem in a separate support library.
+# Newer libstdc++/Clang/MSVC provide it through the normal C++ runtime.
+set(BANEWFN_FILESYSTEM_LIB)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+    list(APPEND BANEWFN_FILESYSTEM_LIB stdc++fs)
+endif()
+
 set(BANEWFN_WINDOWS_RESOURCE)
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     list(APPEND BANEWFN_WINDOWS_RESOURCE src/banewfn.rc)
@@ -73,6 +80,9 @@ add_executable(bwpack
     $<TARGET_OBJECTS:banewfn_core>
     src/bwpack.cpp
 )
+
+target_link_libraries(banewfn PRIVATE ${BANEWFN_FILESYSTEM_LIB})
+target_link_libraries(bwpack PRIVATE ${BANEWFN_FILESYSTEM_LIB})
 
 # Output directory
 set_target_properties(banewfn bwpack PROPERTIES

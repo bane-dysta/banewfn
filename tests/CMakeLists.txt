@@ -12,6 +12,8 @@ target_include_directories(banewfn_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
+target_link_libraries(banewfn_tests PRIVATE ${BANEWFN_FILESYSTEM_LIB})
+
 set_target_properties(banewfn_tests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
