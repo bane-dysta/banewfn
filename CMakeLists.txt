@@ -62,8 +62,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_L
 endif()
 
 set(BANEWFN_WINDOWS_RESOURCE)
+set(BWPACK_WINDOWS_RESOURCE)
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     list(APPEND BANEWFN_WINDOWS_RESOURCE src/banewfn.rc)
+    list(APPEND BWPACK_WINDOWS_RESOURCE src/bwpack.rc)
 endif()
 
 # banewfn (main runner)
@@ -79,6 +81,7 @@ add_executable(banewfn
 add_executable(bwpack
     $<TARGET_OBJECTS:banewfn_core>
     src/bwpack.cpp
+    ${BWPACK_WINDOWS_RESOURCE}
 )
 
 target_link_libraries(banewfn PRIVATE ${BANEWFN_FILESYSTEM_LIB})

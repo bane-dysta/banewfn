@@ -37,7 +37,7 @@ OBJECTS_LINUX_PACK   = $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(PACK_SOURCES)) $(
 # Objects (Windows)
 OBJECTS_WINDOWS_COMMON = $(patsubst src/%.cpp,$(BUILD_WINDOWS_DIR)/%_win.o,$(COMMON_SOURCES))
 OBJECTS_WINDOWS_BANE   = $(patsubst src/%.cpp,$(BUILD_WINDOWS_DIR)/%_win.o,$(BANE_SOURCES)) $(OBJECTS_WINDOWS_COMMON) $(BUILD_WINDOWS_DIR)/banewfn_win_res.o
-OBJECTS_WINDOWS_PACK   = $(patsubst src/%.cpp,$(BUILD_WINDOWS_DIR)/%_win.o,$(PACK_SOURCES)) $(OBJECTS_WINDOWS_COMMON)
+OBJECTS_WINDOWS_PACK   = $(patsubst src/%.cpp,$(BUILD_WINDOWS_DIR)/%_win.o,$(PACK_SOURCES)) $(OBJECTS_WINDOWS_COMMON) $(BUILD_WINDOWS_DIR)/bwpack_win_res.o
 
 # Default target (Linux)
 all: linux
@@ -66,8 +66,11 @@ $(TARGET_WINDOWS_PACK): $(OBJECTS_WINDOWS_PACK) | $(BUILD_WINDOWS_DIR)
 $(BUILD_WINDOWS_DIR)/%_win.o: src/%.cpp | $(BUILD_WINDOWS_DIR)
 	$(MINGW_CXX) $(MINGW_CXXFLAGS) -c $< -o $@
 
-# Windows资源文件编译 (banewfn only)
+# Windows资源文件编译
 $(BUILD_WINDOWS_DIR)/banewfn_win_res.o: src/banewfn.rc | $(BUILD_WINDOWS_DIR)
+	$(MINGW_WINDRES) -O coff -i $< -o $@ -I src
+
+$(BUILD_WINDOWS_DIR)/bwpack_win_res.o: src/bwpack.rc | $(BUILD_WINDOWS_DIR)
 	$(MINGW_WINDRES) -O coff -i $< -o $@ -I src
 
 # Build both platforms
