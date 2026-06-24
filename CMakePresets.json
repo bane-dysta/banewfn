@@ -20,14 +20,16 @@
       "name": "linux-release",
       "displayName": "Linux release",
       "description": "Native Linux build and STGZ package.",
-      "inherits": "release-base"
+      "inherits": "release-base",
+      "installDir": "${sourceDir}/release/linux-release/stage"
     },
     {
       "name": "windows-release",
       "displayName": "Windows release (MinGW cross)",
       "description": "Cross-build a Windows x86_64 release bundle from WSL/Linux.",
       "inherits": "release-base",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake"
+      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake",
+      "installDir": "${sourceDir}/release/windows-release/stage"
     }
   ],
   "buildPresets": [
@@ -37,8 +39,24 @@
       "jobs": 0
     },
     {
+      "name": "install-linux-release",
+      "configurePreset": "linux-release",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
       "name": "windows-release",
       "configurePreset": "windows-release",
+      "jobs": 0
+    },
+    {
+      "name": "install-windows-release",
+      "configurePreset": "windows-release",
+      "targets": [
+        "install"
+      ],
       "jobs": 0
     }
   ],
@@ -64,7 +82,7 @@
     {
       "name": "linux-release",
       "displayName": "Linux release workflow",
-      "description": "Configure, build and package the Linux STGZ release.",
+      "description": "Configure, build, install and package the Linux STGZ release.",
       "steps": [
         {
           "type": "configure",
@@ -73,6 +91,10 @@
         {
           "type": "build",
           "name": "linux-release"
+        },
+        {
+          "type": "build",
+          "name": "install-linux-release"
         },
         {
           "type": "package",
@@ -83,7 +105,7 @@
     {
       "name": "windows-release",
       "displayName": "Windows release workflow",
-      "description": "Configure, build and package the Windows ZIP release.",
+      "description": "Configure, build, install and package the Windows ZIP release.",
       "steps": [
         {
           "type": "configure",
@@ -92,6 +114,10 @@
         {
           "type": "build",
           "name": "windows-release"
+        },
+        {
+          "type": "build",
+          "name": "install-windows-release"
         },
         {
           "type": "package",
