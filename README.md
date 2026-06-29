@@ -1,4 +1,4 @@
-# BaneWfn
+# BaneWfn 1.3.0
 
 BaneWfn 是一个面向 Multiwfn 的工作流脚本器，用来把重复、固定、容易出错的菜单操作整理成可复用的脚本。它不替代 Multiwfn，也不额外实现量子化学分析算法，而是把输入文件、模块配置和后处理命令组织在一起，让常见分析流程更容易复用、共享和批量执行。
 
@@ -83,3 +83,6 @@ banewfn demo.bw -w test.fchk
 
 这份脚本会加载 `fmo.conf`，按模块配置展开对应的 Multiwfn 输入序列，并顺序执行整个任务。
 
+## 更新历史
+
+详见[UPDATE_HISTORY](docs/UPDATE_HISTORY.md)
