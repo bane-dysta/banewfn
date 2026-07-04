@@ -2,14 +2,6 @@
 
 ![BaneWfn 图标](assets/icon.png)
 
-这是根据项目原始中文手册整理的 GitHub 友好版 wiki。目标很简单：**不依赖额外构建，不需要单独部署，直接推到 GitHub 仓库后就能按页面阅读**。
-
-## 你可以从这里开始
-
-- 第一次接触 BaneWfn：先看 [总览](Overview.md)、[运行时配置](Runtime-Configuration.md)、[输入文件与 DSL](Input-DSL.md)。
-- 想快速跑起来：直接看本页下面的“快速开始”，再结合 [示例](Examples.md)。
-- 已经在项目里使用过：把 [完整手册](Full-Manual.md) 当参考索引，按需跳转各章节。
-
 ## 页面目录
 
 1. [总览](Overview.md)  
@@ -73,10 +65,3 @@ banewfn demo.bw -w test.fchk
 - [原始项目 README](../README.md)
 - [原始中文手册源文件](../docs/BaneWfn_Project_Manual_zh.md)
 
-## 说明
-
-这个目录同时提供了：
-
-- `README.md`：仓库里进入 `wiki/` 目录时会直接显示；
-- `Home.md`：后续如果你想迁移到 GitHub 自带 Wiki，更容易复用；
-- `_Sidebar.md` / `_Footer.md`：预留了 GitHub Wiki 风格的导航文件。
