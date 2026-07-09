@@ -86,6 +86,88 @@ bool tryParseCollectDirective(const std::string& trimmedLine, std::string& colle
     return !collectDir.empty();
 }
 
+bool isBuiltinListParamKey(const std::string& key) {
+    const std::string lowerKey = toLowerAscii(Utils::trim(key));
+    return lowerKey == "op" || lowerKey == "ops" || lowerKey == "operator" || lowerKey == "operators" ||
+           lowerKey == "combine" || lowerKey == "combines";
+}
+
+bool tryParseBuiltinStart(const std::string& trimmedLine, std::string& builtinName, std::string& builtinId) {
+    std::string line = Utils::trim(trimmedLine);
+    if (line.rfind("bane.", 0) != 0) {
+        return false;
+    }
+
+    const size_t openBrace = line.find('{');
+    if (openBrace == std::string::npos) {
+        return false;
+    }
+
+    const std::string tail = Utils::trim(line.substr(openBrace + 1));
+    if (!tail.empty()) {
+        // Keep the DSL line-oriented for now. A closing brace on the same line is easy to add
+        // later, but rejecting it avoids ambiguous half-parsed blocks.
+        return false;
+    }
+
+    std::string head = Utils::trim(line.substr(0, openBrace));
+    if (head.rfind("bane.", 0) != 0) {
+        return false;
+    }
+    head = Utils::trim(head.substr(5));
+    if (head.empty()) {
+        return false;
+    }
+
+    std::istringstream iss(head);
+    std::vector<std::string> tokens;
+    std::string token;
+    while (iss >> token) {
+        tokens.push_back(token);
+    }
+
+    if (tokens.empty() || tokens.size() > 2) {
+        return false;
+    }
+
+    builtinName = tokens[0];
+    builtinId = tokens.size() == 2 ? tokens[1] : "";
+    return !builtinName.empty();
+}
+
+bool parseBuiltinBlockLine(const std::string& trimmedLine, ModuleTask& task) {
+    std::string line = Utils::trim(trimmedLine);
+    if (line.empty()) {
+        return true;
+    }
+
+    // Accept either "key = value" or the legacy-like "key value" form.
+    size_t eqPos = line.find('=');
+    std::string key;
+    std::string value;
+    if (eqPos != std::string::npos) {
+        key = Utils::trim(line.substr(0, eqPos));
+        value = Utils::trim(line.substr(eqPos + 1));
+    } else {
+        std::istringstream iss(line);
+        iss >> key;
+        std::getline(iss, value);
+        value = Utils::trim(value);
+    }
+
+    if (key.empty()) {
+        return false;
+    }
+
+    value = Utils::trimQuotes(value);
+    if (isBuiltinListParamKey(key)) {
+        task.builtinBody.push_back(toLowerAscii(key) + "=" + value);
+    } else {
+        task.params[key] = value;
+    }
+    return true;
+}
+
 bool parseNextPlaceholder(const std::string& text, size_t startPos, ParsedPlaceholder& out) {
     const size_t pos = text.find('$', startPos);
     if (pos == std::string::npos) {
@@ -525,6 +607,13 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
         for (auto& param : task.params) {
             param.second = replaceInputPlaceholders(param.second, wfnFile, customVars);
         }
+
+        if (task.isBuiltin) {
+            task.builtinId = replaceInputPlaceholders(task.builtinId, wfnFile, customVars);
+            for (auto& bodyLine : task.builtinBody) {
+                bodyLine = replaceInputPlaceholders(bodyLine, wfnFile, customVars);
+            }
+        }
         
         // Apply replacement to post-processing step parameters
         for (auto& step : task.postProcessSteps) {
@@ -691,6 +780,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
     bool inCommandMode = false;
     bool inRawMode = false;
     bool inPreRawMode = false;
+    bool inBuiltinMode = false;
     std::map<std::string, int> moduleBlockCounters;  // Track block indices for each module name
     int anonymousBlockCounter = 0;
 
@@ -704,7 +794,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
     };
 
     auto hasPendingTask = [&]() {
-        return !currentTask.moduleName.empty() || !currentTask.commands.empty() ||
+        return currentTask.isBuiltin || !currentTask.moduleName.empty() || !currentTask.commands.empty() ||
                !currentTask.preRawCommands.empty() || !currentTask.rawCommands.empty();
     };
     
@@ -717,6 +807,25 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
         // Special keywords still need to be detected even in command mode
         bool isSpecialKeyword = false;
         
+        // Built-in bane.* blocks are parsed as strict key/value blocks until a closing brace.
+        if (inBuiltinMode) {
+            if (trimmed == "}" || trimmed == "};") {
+                tasks.push_back(currentTask);
+                currentTask = ModuleTask();
+                inBuiltinMode = false;
+                continue;
+            }
+
+            if (trimmed.empty()) {
+                continue;
+            }
+
+            if (!parseBuiltinBlockLine(trimmed, currentTask)) {
+                std::cerr << "Warning: Could not parse builtin DSL line: " << trimmed << std::endl;
+            }
+            continue;
+        }
+
         // Enter command mode
         if (trimmed == "%command") {
             isSpecialKeyword = true;
@@ -901,6 +1010,29 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             }
         }
         
+        // Built-in high-level DSL block start, e.g.
+        // bane.cube.make density { ... }
+        if (!inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
+            std::string builtinName;
+            std::string builtinId;
+            if (tryParseBuiltinStart(trimmed, builtinName, builtinId)) {
+                if (hasPendingTask()) {
+                    tasks.push_back(currentTask);
+                }
+                currentTask = ModuleTask();
+                currentTask.isBuiltin = true;
+                currentTask.builtinName = builtinName;
+                currentTask.builtinId = builtinId;
+                currentTask.blockIndex = moduleBlockCounters["builtin:" + builtinName]++;
+                inBuiltinMode = true;
+                inProcessMode = false;
+                inCommandMode = false;
+                inPreRawMode = false;
+                inRawMode = false;
+                continue;
+            }
+        }
+
         // Module start [module_name] 必须顶格
         if (!noComment.empty() && noComment[0] == '[') {
             size_t lastNonWS = noComment.find_last_not_of(" \t\r\n");

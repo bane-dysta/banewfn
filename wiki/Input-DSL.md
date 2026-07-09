@@ -295,6 +295,87 @@ index h
 
 Note: 模块参数和 `%process` 参数使用的是**空格分隔的 `key value` 语法**，而不是 `key=value`。
 
+### 高层实空间 builtin：`bane.cube.make` / `bane.line.profile` / `bane.plane.map`
+
+除传统 `[module]` 块外，BaneWfn 还内置了三类面向 Multiwfn 主功能 3/4/5 的高层 DSL。它们不依赖外部 `.conf` 模板，而是直接描述“从波函数采样某种实空间函数”的意图：
+
+```ini
+bane.cube.make complex_den {
+    from   = complex.fchk
+    field  = electron_density
+    grid   = medium
+    output = ${input}_complex_den.cub
+}
+
+bane.cube.make frag_diff {
+    from   = complex.fchk
+    field  = electron_density
+    grid   = high
+    op     = -,fragA.fchk
+    op     = -,fragB.fchk
+    output = ${input}_frag_density_diff.cub
+}
+
+bane.line.profile bond_rho {
+    from   = complex.fchk
+    field  = electron_density
+    line   = atoms(1,2)
+    output = ${input}_rho_1_2.txt
+}
+
+bane.plane.map ring_elf {
+    from   = complex.fchk
+    field  = elf
+    plane  = atoms(1,2,3)
+    grid   = 200,200
+    output = ${input}_elf_plane.txt
+}
+```
+
+`complex_den`、`frag_diff`、`bond_rho`、`ring_elf` 是逻辑产物名，便于日志命名和后续引用。块内支持 `key = value` 或 `key value`，但推荐统一使用 `key = value`。builtin 使用严格键检查：未知键会直接报错，这样可以尽早发现 `ouptut`、`gris` 之类拼写错误。
+
+通用字段如下：
+
+| 字段 | 说明 |
+| --- | --- |
+| `from` / `wfn` | 本块使用的波函数文件；省略时使用当前 `wfn` / `wfn_rebase`。 |
+| `field` / `type` | 实空间函数类型。常用别名：`electron_density`/`density`/`rho`、`spin_density`、`elf`、`lol`、`esp`、`alie`、`orbital`、`orbital_density`。 |
+| `mode` | 可选：`promolecular` 或 `deformation`，对应 Multiwfn 主功能 3/4/5 中的特殊模式。 |
+| `op` / `operator` / `combine` | 可重复；表示 Multiwfn 的“波函数 custom operation”，例如 `op = -,fragA.fchk` 或 `op = - fragA.fchk`。这不是 cube 文件算术。 |
+| `overwrite` | 输出文件已存在时是否覆盖，默认 `false`。 |
+
+`bane.cube.make` 对应 Multiwfn 主功能 5，常用字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `grid` | `low` / `medium` / `high`，也可写 Multiwfn 原始网格编号。 |
+| `grid = like(id-or-cube)` | 使用已有逻辑产物或 cube 文件的格点设置。适合让片段波函数和复合物波函数严格对齐。 |
+| `output` | 将 Multiwfn 默认生成的 cube 文件重命名为目标路径。 |
+
+`bane.line.profile` 对应 Multiwfn 主功能 3，常用字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `line = atoms(i,j)` | 用两个原子定义剖线。 |
+| `line = points(x1,y1,z1; x2,y2,z2)` | 用两个端点坐标定义剖线。 |
+| `output` | 若用户在交互会话中导出了 `line.txt`，会在会话结束后重命名为该路径。 |
+
+注意：Multiwfn 的主功能 3 在计算曲线后进入图形/菜单界面，`line.txt` 的导出来自该界面操作。因此 `bane.line.profile` 当前设计为交互式预输入：BaneWfn 负责把用户带到对应曲线，之后由用户在 Multiwfn 中导出数据或保存图。
+
+`bane.plane.map` 对应 Multiwfn 主功能 4，常用字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `plane = atoms(i,j,k)` | 用三个原子定义平面。 |
+| `plane = points(p1; p2; p3)` | 用三个点定义平面。 |
+| `plane = xy(z)` / `xz(y)` / `yz(x)` | 定义坐标平面。 |
+| `grid` | 二维网格数，默认 `200,200`。 |
+| `graph` / `graph_type` | `color`、`contour`、`relief`、`shaded`、`projection`、`gradient`、`vector` 或 Multiwfn 原始编号。 |
+| `output` | 非交互模式下导出 `plane.txt` 并重命名。 |
+| `image` | 非交互模式下尝试保存图像并把 `dislin.png` 重命名。 |
+
+当 `plane.map` 未指定 `output` 或 `image` 时，会进入交互模式；指定输出后默认走批处理导出。
+
 ### `%process`
 
 `%process` 用于声明模块步骤，它依赖于当前已经进入某个模块块。例如：

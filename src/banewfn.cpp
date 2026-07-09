@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <cctype>
 #include <system_error>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -229,6 +230,13 @@ static bool taskHasMultiwfnScript(const ModuleTask& task) {
 }
 
 static std::string getTaskDisplayName(const ModuleTask& task) {
+    if (task.isBuiltin) {
+        std::string name = "bane." + task.builtinName;
+        if (!task.builtinId.empty()) {
+            name += " " + task.builtinId;
+        }
+        return name;
+    }
     if (!task.moduleName.empty()) {
         return task.moduleName;
     }
@@ -279,6 +287,482 @@ static std::string getCommandScriptStem(const ModuleTask& task) {
 
     return stem;
 }
+
+static std::string toLowerAsciiLocal(const std::string& text) {
+    std::string result = text;
+    std::transform(result.begin(), result.end(), result.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return result;
+}
+
+static bool parseBoolLike(const std::string& rawValue, bool defaultValue = false) {
+    const std::string value = toLowerAsciiLocal(Utils::trim(rawValue));
+    if (value.empty()) {
+        return defaultValue;
+    }
+    return value == "1" || value == "true" || value == "yes" || value == "on" || value == "y";
+}
+
+static std::string sanitizeFileStem(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (char c : raw) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc) || c == '_' || c == '-' || c == '.') {
+            out.push_back(c);
+        } else {
+            out.push_back('_');
+        }
+    }
+    return out.empty() ? std::string("builtin") : out;
+}
+
+static std::string getBuiltinFileStem(const ModuleTask& task, const std::string& wfnFile) {
+    std::string stem = "builtin_" + sanitizeFileStem(task.builtinName);
+    if (!task.builtinId.empty()) {
+        stem += "_" + sanitizeFileStem(task.builtinId);
+    }
+    const std::string wfnBase = getBaseName(wfnFile);
+    if (!wfnBase.empty()) {
+        stem += "_" + sanitizeFileStem(wfnBase);
+    }
+    if (task.blockIndex > 0) {
+        stem += "_" + std::to_string(task.blockIndex);
+    }
+    return stem;
+}
+
+static bool getParamCI(const ModuleTask& task, const std::string& key, std::string& value) {
+    const std::string wanted = toLowerAsciiLocal(key);
+    for (const auto& kv : task.params) {
+        if (toLowerAsciiLocal(kv.first) == wanted) {
+            value = kv.second;
+            return true;
+        }
+    }
+    return false;
+}
+
+static std::string getParamCIOr(const ModuleTask& task, const std::vector<std::string>& keys,
+                                const std::string& defaultValue = "") {
+    for (const auto& key : keys) {
+        std::string value;
+        if (getParamCI(task, key, value)) {
+            return value;
+        }
+    }
+    return defaultValue;
+}
+
+static bool validateBuiltinKeys(const ModuleTask& task, const std::set<std::string>& allowedKeys) {
+    bool ok = true;
+    for (const auto& kv : task.params) {
+        const std::string key = toLowerAsciiLocal(kv.first);
+        if (allowedKeys.find(key) == allowedKeys.end()) {
+            std::cerr << "Error: Unknown key '" << kv.first << "' in " << getTaskDisplayName(task)
+                      << ". This builtin uses strict key checking." << std::endl;
+            ok = false;
+        }
+    }
+    return ok;
+}
+
+static std::string resolveArtifactOrPath(const std::string& raw,
+                                         const std::map<std::string, std::string>& artifacts) {
+    std::string value = Utils::trimQuotes(Utils::trim(raw));
+    const auto it = artifacts.find(value);
+    if (it != artifacts.end()) {
+        return it->second;
+    }
+    return value;
+}
+
+struct RealSpaceFieldInfo {
+    std::string code;
+    std::string canonical;
+    std::string defaultCubeFile;
+    bool needsOrbitalIndex = false;
+};
+
+static bool resolveRealSpaceField(const std::string& rawField, RealSpaceFieldInfo& info,
+                                  std::string& errorMessage) {
+    std::string field = toLowerAsciiLocal(Utils::trim(rawField));
+    field.erase(std::remove(field.begin(), field.end(), '-'), field.end());
+    for (char& c : field) {
+        if (c == ' ') c = '_';
+    }
+
+    if (field.empty()) {
+        field = "electron_density";
+    }
+
+    auto numeric = [](const std::string& text) {
+        if (text.empty()) return false;
+        size_t pos = 0;
+        if (text[0] == '-' || text[0] == '+') pos = 1;
+        if (pos >= text.size()) return false;
+        for (; pos < text.size(); ++pos) {
+            if (!std::isdigit(static_cast<unsigned char>(text[pos]))) return false;
+        }
+        return true;
+    };
+
+    if (numeric(field)) {
+        info = {field, field, "", field == "4" || field == "44"};
+        return true;
+    }
+
+    static const std::map<std::string, RealSpaceFieldInfo> fields = {
+        {"rho", {"1", "electron_density", "density.cub", false}},
+        {"density", {"1", "electron_density", "density.cub", false}},
+        {"electron", {"1", "electron_density", "density.cub", false}},
+        {"electron_density", {"1", "electron_density", "density.cub", false}},
+        {"laplacian", {"3", "density_laplacian", "", false}},
+        {"density_laplacian", {"3", "density_laplacian", "", false}},
+        {"laplacian_density", {"3", "density_laplacian", "", false}},
+        {"orbital", {"4", "orbital", "", true}},
+        {"mo", {"4", "orbital", "", true}},
+        {"orbital_density", {"44", "orbital_density", "", true}},
+        {"mo_density", {"44", "orbital_density", "", true}},
+        {"spin", {"5", "spin_density", "spindensity.cub", false}},
+        {"spin_density", {"5", "spin_density", "spindensity.cub", false}},
+        {"esp", {"12", "esp", "totesp.cub", false}},
+        {"mep", {"12", "esp", "totesp.cub", false}},
+        {"electrostatic_potential", {"12", "esp", "totesp.cub", false}},
+        {"elf", {"9", "elf", "ELF.cub", false}},
+        {"lol", {"10", "lol", "LOL.cub", false}},
+        {"alie", {"18", "alie", "", false}},
+        {"average_local_ionization_energy", {"18", "alie", "", false}},
+    };
+
+    const auto it = fields.find(field);
+    if (it == fields.end()) {
+        errorMessage = "unsupported real-space field: " + rawField;
+        return false;
+    }
+
+    info = it->second;
+    return true;
+}
+
+static void appendFieldSelection(std::vector<std::string>& commands, const RealSpaceFieldInfo& field,
+                                 const ModuleTask& task) {
+    commands.push_back(field.code);
+    if (field.needsOrbitalIndex) {
+        const std::string index = getParamCIOr(task, {"orbital", "orbital_index", "index", "mo"}, "h");
+        commands.push_back(index);
+    }
+}
+
+static std::string normalizeGridQuality(const std::string& rawGrid) {
+    std::string grid = toLowerAsciiLocal(Utils::trim(rawGrid));
+    if (grid.empty()) return "2";
+    if (grid == "low" || grid == "coarse" || grid == "preview") return "1";
+    if (grid == "medium" || grid == "med" || grid == "normal") return "2";
+    if (grid == "high" || grid == "fine") return "3";
+    return Utils::trim(rawGrid);
+}
+
+static bool appendCubeGridSpec(std::vector<std::string>& commands, const std::string& rawGrid,
+                               const std::map<std::string, std::string>& artifacts,
+                               std::string& errorMessage) {
+    std::string grid = Utils::trim(rawGrid.empty() ? std::string("medium") : rawGrid);
+    const std::string lower = toLowerAsciiLocal(grid);
+    if (lower.rfind("like(", 0) == 0 && lower.back() == ')') {
+        const size_t open = grid.find('(');
+        const size_t close = grid.find_last_of(')');
+        std::string ref = Utils::trim(grid.substr(open + 1, close - open - 1));
+        ref = resolveArtifactOrPath(ref, artifacts);
+        if (ref.empty()) {
+            errorMessage = "grid=like(...) needs a previous artifact id or cube file path";
+            return false;
+        }
+        commands.push_back("8");
+        commands.push_back(ref);
+        return true;
+    }
+
+    commands.push_back(normalizeGridQuality(grid));
+    return true;
+}
+
+static std::string normalizeOperationSpec(const std::string& rawOp, std::string& errorMessage) {
+    std::string op = Utils::trimQuotes(Utils::trim(rawOp));
+    if (op.empty()) {
+        errorMessage = "empty wavefunction operation";
+        return "";
+    }
+
+    if (op.find(',') != std::string::npos) {
+        return op;
+    }
+
+    std::istringstream iss(op);
+    std::string symbol;
+    std::string path;
+    iss >> symbol;
+    std::getline(iss, path);
+    path = Utils::trim(path);
+
+    if (symbol.size() == 1 && std::string("+-*/").find(symbol[0]) != std::string::npos && !path.empty()) {
+        return symbol + "," + path;
+    }
+
+    if (!op.empty() && std::string("+-*/").find(op[0]) != std::string::npos && op.size() > 1) {
+        return std::string(1, op[0]) + "," + Utils::trim(op.substr(1));
+    }
+
+    errorMessage = "invalid wavefunction operation '" + rawOp + "' (expected e.g. -,fragA.fchk or - fragA.fchk)";
+    return "";
+}
+
+static std::vector<std::string> parseBuiltinOperations(const ModuleTask& task, std::string& errorMessage) {
+    std::vector<std::string> ops;
+    for (const auto& bodyLine : task.builtinBody) {
+        const size_t eqPos = bodyLine.find('=');
+        if (eqPos == std::string::npos) continue;
+        std::string value = Utils::trim(bodyLine.substr(eqPos + 1));
+        if (value.empty()) continue;
+
+        std::vector<std::string> values;
+        const std::string lowerKey = toLowerAsciiLocal(Utils::trim(bodyLine.substr(0, eqPos)));
+        if (lowerKey == "ops" || lowerKey == "operators" || lowerKey == "combines") {
+            values = Utils::parseBashArray(value);
+        } else {
+            values = {value};
+        }
+
+        for (const auto& rawOp : values) {
+            const std::string normalized = normalizeOperationSpec(rawOp, errorMessage);
+            if (normalized.empty()) {
+                return {};
+            }
+            ops.push_back(normalized);
+        }
+    }
+    return ops;
+}
+
+static bool appendRealSpaceModePrefix(std::vector<std::string>& commands, const ModuleTask& task,
+                                      std::string& errorMessage) {
+    const std::vector<std::string> ops = parseBuiltinOperations(task, errorMessage);
+    if (!errorMessage.empty()) {
+        return false;
+    }
+
+    std::string mode = toLowerAsciiLocal(getParamCIOr(task, {"mode"}, ""));
+    if (mode == "promol" || mode == "promolecular") {
+        if (!ops.empty()) {
+            errorMessage = "mode=promolecular cannot be combined with op/operator/combine";
+            return false;
+        }
+        commands.push_back("-1");
+        return true;
+    }
+    if (mode == "def" || mode == "deformation" || mode == "deformation_density") {
+        if (!ops.empty()) {
+            errorMessage = "mode=deformation cannot be combined with op/operator/combine";
+            return false;
+        }
+        commands.push_back("-2");
+        return true;
+    }
+
+    if (!ops.empty()) {
+        commands.push_back("0");
+        commands.push_back(std::to_string(ops.size()));
+        for (const auto& op : ops) {
+            commands.push_back(op);
+        }
+    }
+    return true;
+}
+
+static std::vector<std::string> splitSemicolonList(const std::string& raw) {
+    std::vector<std::string> parts;
+    std::string current;
+    for (char c : raw) {
+        if (c == ';') {
+            parts.push_back(Utils::trim(current));
+            current.clear();
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty() || raw.find(';') != std::string::npos) {
+        parts.push_back(Utils::trim(current));
+    }
+    return parts;
+}
+
+static bool extractFunctionLikeArg(const std::string& raw, const std::string& funcName, std::string& inside) {
+    const std::string trimmed = Utils::trim(raw);
+    const std::string lower = toLowerAsciiLocal(trimmed);
+    const std::string prefix = funcName + "(";
+    if (lower.rfind(prefix, 0) != 0 || trimmed.empty() || trimmed.back() != ')') {
+        return false;
+    }
+    inside = Utils::trim(trimmed.substr(prefix.size(), trimmed.size() - prefix.size() - 1));
+    return true;
+}
+
+static bool appendLineSpec(std::vector<std::string>& commands, const std::string& rawLine,
+                           std::string& errorMessage) {
+    std::string spec = Utils::trim(rawLine);
+    std::string inside;
+    if (extractFunctionLikeArg(spec, "atoms", inside) || extractFunctionLikeArg(spec, "atom", inside)) {
+        commands.push_back("1");
+        commands.push_back(inside);
+        return true;
+    }
+    if (extractFunctionLikeArg(spec, "points", inside) || extractFunctionLikeArg(spec, "point", inside)) {
+        const auto pts = splitSemicolonList(inside);
+        if (pts.size() != 2 || pts[0].empty() || pts[1].empty()) {
+            errorMessage = "line=points(...) expects two semicolon-separated coordinates";
+            return false;
+        }
+        commands.push_back("2");
+        commands.push_back(pts[0]);
+        commands.push_back(pts[1]);
+        return true;
+    }
+
+    if (!spec.empty()) {
+        // Compatible shorthand: "1,6" means atoms(1,6).
+        commands.push_back("1");
+        commands.push_back(spec);
+        return true;
+    }
+
+    errorMessage = "line.profile needs line=atoms(i,j) or line=points(x,y,z;x,y,z)";
+    return false;
+}
+
+static std::string normalizePlaneGraphType(const std::string& rawGraph) {
+    std::string graph = toLowerAsciiLocal(Utils::trim(rawGraph));
+    if (graph.empty() || graph == "color" || graph == "filled" || graph == "color_filled" || graph == "map") return "1";
+    if (graph == "contour" || graph == "contour_line") return "2";
+    if (graph == "relief") return "3";
+    if (graph == "shaded" || graph == "shaded_relief") return "4";
+    if (graph == "projection" || graph == "shaded_projection") return "5";
+    if (graph == "gradient" || graph == "gradient_line") return "6";
+    if (graph == "vector" || graph == "vector_field") return "7";
+    return Utils::trim(rawGraph);
+}
+
+static bool appendPlaneSpec(std::vector<std::string>& commands, const std::string& rawPlane,
+                            std::string& errorMessage) {
+    std::string spec = Utils::trim(rawPlane);
+    std::string inside;
+    if (extractFunctionLikeArg(spec, "atoms", inside) || extractFunctionLikeArg(spec, "atom", inside)) {
+        commands.push_back("4");
+        commands.push_back(inside);
+        return true;
+    }
+    if (extractFunctionLikeArg(spec, "points", inside) || extractFunctionLikeArg(spec, "point", inside)) {
+        const auto pts = splitSemicolonList(inside);
+        if (pts.size() != 3 || pts[0].empty() || pts[1].empty() || pts[2].empty()) {
+            errorMessage = "plane=points(...) expects three semicolon-separated coordinates";
+            return false;
+        }
+        commands.push_back("5");
+        commands.push_back(pts[0]);
+        commands.push_back(pts[1]);
+        commands.push_back(pts[2]);
+        return true;
+    }
+    if (extractFunctionLikeArg(spec, "xy", inside)) {
+        commands.push_back("1");
+        commands.push_back(inside);
+        return true;
+    }
+    if (extractFunctionLikeArg(spec, "xz", inside)) {
+        commands.push_back("2");
+        commands.push_back(inside);
+        return true;
+    }
+    if (extractFunctionLikeArg(spec, "yz", inside)) {
+        commands.push_back("3");
+        commands.push_back(inside);
+        return true;
+    }
+
+    if (!spec.empty()) {
+        // Compatible shorthand: "1,2,3" means atoms(1,2,3).
+        commands.push_back("4");
+        commands.push_back(spec);
+        return true;
+    }
+
+    errorMessage = "plane.map needs plane=atoms(i,j,k), plane=points(...), xy(z), xz(y), or yz(x)";
+    return false;
+}
+
+static bool moveGeneratedFile(const std::string& source, const std::string& destination,
+                              bool overwrite, std::string& errorMessage) {
+    namespace fs = std::filesystem;
+    if (Utils::trim(destination).empty() || source == destination) {
+        return true;
+    }
+
+    std::error_code ec;
+    const fs::path src(source);
+    const fs::path dst(destination);
+    if (!fs::exists(src, ec) || !fs::is_regular_file(src, ec)) {
+        errorMessage = "expected output file not found: " + source;
+        return false;
+    }
+
+    if (fs::exists(dst, ec)) {
+        if (!overwrite) {
+            errorMessage = "destination already exists: " + destination + " (set overwrite=true to replace it)";
+            return false;
+        }
+        fs::remove(dst, ec);
+        if (ec) {
+            errorMessage = "failed to remove existing destination " + destination + ": " + ec.message();
+            return false;
+        }
+    }
+
+    if (!dst.parent_path().empty()) {
+        fs::create_directories(dst.parent_path(), ec);
+        if (ec) {
+            errorMessage = "failed to create output directory for " + destination + ": " + ec.message();
+            return false;
+        }
+    }
+
+    fs::rename(src, dst, ec);
+    if (!ec) {
+        return true;
+    }
+
+    const std::string renameMessage = ec.message();
+    ec.clear();
+    fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+        errorMessage = renameMessage + "; copy fallback failed: " + ec.message();
+        return false;
+    }
+
+    fs::remove(src, ec);
+    if (ec) {
+        errorMessage = "copied but failed to remove original: " + ec.message();
+        return false;
+    }
+    return true;
+}
+
+struct BuiltinExecutionPlan {
+    std::vector<std::string> commands;
+    bool interactive = false;
+    std::string primaryDefaultOutput;
+    std::string primaryRequestedOutput;
+    std::string secondaryDefaultOutput;
+    std::string secondaryRequestedOutput;
+    std::string artifactPath;
+};
 
 class NewFileCollector {
 public:
@@ -989,6 +1473,303 @@ public:
         }
     }
     
+    bool buildBuiltinExecutionPlan(const ModuleTask& task,
+                                   const std::map<std::string, std::string>& artifacts,
+                                   BuiltinExecutionPlan& plan) {
+        plan = BuiltinExecutionPlan();
+
+        const std::string builtinName = toLowerAsciiLocal(Utils::trim(task.builtinName));
+        std::string errorMessage;
+        RealSpaceFieldInfo field;
+        if (!resolveRealSpaceField(getParamCIOr(task, {"field", "type"}, "electron_density"), field, errorMessage)) {
+            std::cerr << "Error: " << errorMessage << " in " << getTaskDisplayName(task) << std::endl;
+            return false;
+        }
+
+        if (builtinName == "cube.make") {
+            const std::set<std::string> allowed = {
+                "from", "wfn", "field", "type", "grid", "output", "overwrite", "mode",
+                "orbital", "orbital_index", "index", "mo", "wait", "interactive"
+            };
+            if (!validateBuiltinKeys(task, allowed)) {
+                return false;
+            }
+
+            const bool forcedInteractive = parseBoolLike(getParamCIOr(task, {"wait", "interactive"}, "false"), false);
+            if (forcedInteractive) {
+                std::cerr << "Error: bane.cube.make is a batch builtin; use legacy %raw/wait for manual sessions." << std::endl;
+                return false;
+            }
+
+            plan.commands.push_back("5");
+            if (!appendRealSpaceModePrefix(plan.commands, task, errorMessage)) {
+                std::cerr << "Error: " << errorMessage << " in " << getTaskDisplayName(task) << std::endl;
+                return false;
+            }
+            appendFieldSelection(plan.commands, field, task);
+            if (!appendCubeGridSpec(plan.commands, getParamCIOr(task, {"grid"}, "medium"), artifacts, errorMessage)) {
+                std::cerr << "Error: " << errorMessage << " in " << getTaskDisplayName(task) << std::endl;
+                return false;
+            }
+
+            plan.primaryDefaultOutput = field.defaultCubeFile;
+            plan.primaryRequestedOutput = getParamCIOr(task, {"output"}, "");
+            if (plan.primaryDefaultOutput.empty() && !plan.primaryRequestedOutput.empty()) {
+                std::cerr << "Error: field " << field.canonical
+                          << " does not have a known default cube filename yet; omit output= or use a supported field alias." << std::endl;
+                return false;
+            }
+
+            if (field.canonical == "esp") {
+                // Match the existing grid.conf behaviour: after exporting total ESP cube, convert
+                // the value from Hartree/e to kcal/mol via main function 13.
+                plan.commands.push_back("2");
+                plan.commands.push_back("0");
+                plan.commands.push_back("r");
+                plan.commands.push_back("totesp.cub");
+                plan.commands.push_back("13");
+                plan.commands.push_back("11");
+                plan.commands.push_back("5");
+                plan.commands.push_back("627.51");
+                plan.commands.push_back("0");
+                plan.commands.push_back("totesp.cub");
+                plan.commands.push_back("-1");
+                plan.commands.push_back("5");
+                plan.commands.push_back("-10");
+                plan.commands.push_back("q");
+            } else {
+                plan.commands.push_back("2");
+                plan.commands.push_back("0");
+                plan.commands.push_back("5");
+                plan.commands.push_back("-10");
+                plan.commands.push_back("q");
+            }
+
+            if (!plan.primaryRequestedOutput.empty()) {
+                plan.artifactPath = plan.primaryRequestedOutput;
+            } else if (!plan.primaryDefaultOutput.empty()) {
+                plan.artifactPath = plan.primaryDefaultOutput;
+            }
+            return true;
+        }
+
+        if (builtinName == "line.profile") {
+            const std::set<std::string> allowed = {
+                "from", "wfn", "field", "type", "line", "output", "overwrite", "mode",
+                "orbital", "orbital_index", "index", "mo", "wait", "interactive"
+            };
+            if (!validateBuiltinKeys(task, allowed)) {
+                return false;
+            }
+
+            plan.commands.push_back("3");
+            if (!appendRealSpaceModePrefix(plan.commands, task, errorMessage)) {
+                std::cerr << "Error: " << errorMessage << " in " << getTaskDisplayName(task) << std::endl;
+                return false;
+            }
+            appendFieldSelection(plan.commands, field, task);
+            if (!appendLineSpec(plan.commands, getParamCIOr(task, {"line"}, ""), errorMessage)) {
+                std::cerr << "Error: " << errorMessage << " in " << getTaskDisplayName(task) << std::endl;
+                return false;
+            }
+
+            // Main function 3 enters a plotting GUI/menu after calculating the curve; Multiwfn
+            // exports line.txt from the right-click/menu workflow. Keep it interactive by design,
+            // then rename line.txt if the user exported it during the session.
+            plan.interactive = true;
+            plan.primaryDefaultOutput = "line.txt";
+            plan.primaryRequestedOutput = getParamCIOr(task, {"output"}, "");
+            if (!plan.primaryRequestedOutput.empty()) {
+                plan.artifactPath = plan.primaryRequestedOutput;
+            }
+            return true;
+        }
+
+        if (builtinName == "plane.map") {
+            const std::set<std::string> allowed = {
+                "from", "wfn", "field", "type", "plane", "grid", "graph", "graph_type",
+                "output", "image", "overwrite", "mode", "orbital", "orbital_index", "index", "mo",
+                "wait", "interactive"
+            };
+            if (!validateBuiltinKeys(task, allowed)) {
+                return false;
+            }
+
+            plan.commands.push_back("4");
+            if (!appendRealSpaceModePrefix(plan.commands, task, errorMessage)) {
+                std::cerr << "Error: " << errorMessage << " in " << getTaskDisplayName(task) << std::endl;
+                return false;
+            }
+            appendFieldSelection(plan.commands, field, task);
+            plan.commands.push_back(normalizePlaneGraphType(getParamCIOr(task, {"graph", "graph_type"}, "color")));
+            plan.commands.push_back(getParamCIOr(task, {"grid"}, "200,200"));
+            if (!appendPlaneSpec(plan.commands, getParamCIOr(task, {"plane"}, ""), errorMessage)) {
+                std::cerr << "Error: " << errorMessage << " in " << getTaskDisplayName(task) << std::endl;
+                return false;
+            }
+
+            plan.primaryDefaultOutput = "plane.txt";
+            plan.primaryRequestedOutput = getParamCIOr(task, {"output"}, "");
+            plan.secondaryDefaultOutput = "dislin.png";
+            plan.secondaryRequestedOutput = getParamCIOr(task, {"image"}, "");
+
+            const bool requestedInteractive = parseBoolLike(getParamCIOr(task, {"wait", "interactive"}, "false"), false);
+            if (requestedInteractive || (plan.primaryRequestedOutput.empty() && plan.secondaryRequestedOutput.empty())) {
+                plan.interactive = true;
+            } else {
+                if (!plan.primaryRequestedOutput.empty()) {
+                    plan.commands.push_back("-6");
+                }
+                if (!plan.secondaryRequestedOutput.empty()) {
+                    plan.commands.push_back("0");
+                }
+                plan.commands.push_back("-10");
+                plan.commands.push_back("q");
+            }
+
+            if (!plan.primaryRequestedOutput.empty()) {
+                plan.artifactPath = plan.primaryRequestedOutput;
+            }
+            return true;
+        }
+
+        std::cerr << "Error: Unknown builtin DSL block bane." << task.builtinName
+                  << ". Supported: bane.cube.make, bane.line.profile, bane.plane.map" << std::endl;
+        return false;
+    }
+
+    std::string generateBuiltinScript(const BuiltinExecutionPlan& plan) const {
+        std::stringstream output;
+        for (const auto& cmd : plan.commands) {
+            output << cmd << "\n";
+        }
+        return output.str();
+    }
+
+    bool executeBuiltinTask(const ModuleTask& task, const std::string& currentWfnFile,
+                            int cores, const ExecutionOptions& options,
+                            std::map<std::string, std::string>& artifacts) {
+        std::cout << "\n>>> Processing builtin task: " << getTaskDisplayName(task) << std::endl;
+
+        std::string sourceWfn = getParamCIOr(task, {"from", "wfn"}, currentWfnFile);
+        sourceWfn = resolveArtifactOrPath(sourceWfn, artifacts);
+        if (Utils::trim(sourceWfn).empty()) {
+            std::cerr << "Error: " << getTaskDisplayName(task)
+                      << " has no wavefunction source. Set from=... or wfn=..." << std::endl;
+            return false;
+        }
+        if (!options.dryrun && !Utils::fileExists(sourceWfn)) {
+            std::cerr << "Warning: builtin source wavefunction file not found: " << sourceWfn << std::endl;
+        }
+
+        BuiltinExecutionPlan plan;
+        if (!buildBuiltinExecutionPlan(task, artifacts, plan)) {
+            return false;
+        }
+
+        const bool overwrite = parseBoolLike(getParamCIOr(task, {"overwrite"}, "false"), false);
+        const std::string commandText = generateBuiltinScript(plan);
+        if (commandText.empty()) {
+            return false;
+        }
+
+        if (options.dryrun) {
+            std::string cmdFileName = getBuiltinFileStem(task, sourceWfn) + ".txt";
+            std::ofstream cmdFile(cmdFileName);
+            if (!cmdFile.is_open()) {
+                std::cerr << "Error: Cannot create builtin command file: " << cmdFileName << std::endl;
+                return false;
+            }
+            cmdFile << commandText;
+            cmdFile.close();
+
+            std::cout << "Dry-run mode: builtin command file generated: " << cmdFileName << std::endl;
+            std::cout << "Would run: "
+                      << buildMultiwfnInvocation(configManager.getConfig().multiwfnExec, sourceWfn, cores, options)
+                      << (plan.interactive ? "  (interactive pipe)" : " < " + cmdFileName) << std::endl;
+            if (!task.builtinId.empty() && !plan.artifactPath.empty()) {
+                artifacts[task.builtinId] = plan.artifactPath;
+            }
+            return true;
+        }
+
+        bool success = false;
+        if (plan.interactive) {
+            ModuleTask rawTask;
+            rawTask.rawCommands = plan.commands;
+            rawTask.useWait = true;
+            rawTask.blockIndex = task.blockIndex;
+            rawTask.isBuiltin = true;
+            rawTask.builtinName = task.builtinName;
+            rawTask.builtinId = task.builtinId;
+            success = executeModuleTaskPipe(rawTask, sourceWfn, cores, options);
+        } else {
+            std::string cmdFileName = getBuiltinFileStem(task, sourceWfn) + ".txt";
+            std::ofstream cmdFile(cmdFileName);
+            if (!cmdFile.is_open()) {
+                std::cerr << "Error: Cannot create builtin command file: " << cmdFileName << std::endl;
+                return false;
+            }
+            cmdFile << commandText;
+            cmdFile.close();
+
+            std::string outFile;
+            if (!options.screen) {
+                outFile = getBuiltinFileStem(task, sourceWfn) + ".out";
+                std::ofstream outFileStream(outFile);
+                if (outFileStream.is_open()) {
+                    outFileStream << UI::getLogoString();
+                    outFileStream.close();
+                }
+            }
+
+            std::stringstream cmd;
+            cmd << buildMultiwfnInvocation(configManager.getConfig().multiwfnExec, sourceWfn, cores, options)
+                << " < " << cmdFileName;
+            if (!options.screen) {
+                cmd << " >> " << outFile;
+            }
+
+            std::cout << "Executing command: " << cmd.str() << std::endl;
+            std::cout << "Starting Multiwfn process..." << std::endl;
+            int result = system(cmd.str().c_str());
+            remove(cmdFileName.c_str());
+            success = (result == 0);
+            if (success) {
+                printSuccessLine("Builtin " + getTaskDisplayName(task) + " execution completed.");
+            } else {
+                printFailureLine("Error: Builtin " + getTaskDisplayName(task) +
+                                 " execution failed with error code " + std::to_string(result));
+            }
+        }
+
+        if (!success) {
+            return false;
+        }
+
+        std::string moveError;
+        if (!plan.primaryRequestedOutput.empty()) {
+            if (!moveGeneratedFile(plan.primaryDefaultOutput, plan.primaryRequestedOutput, overwrite, moveError)) {
+                std::cerr << "Error: " << moveError << std::endl;
+                return false;
+            }
+            printSuccessLine("Output written: " + plan.primaryRequestedOutput);
+        }
+        if (!plan.secondaryRequestedOutput.empty()) {
+            moveError.clear();
+            if (!moveGeneratedFile(plan.secondaryDefaultOutput, plan.secondaryRequestedOutput, overwrite, moveError)) {
+                std::cerr << "Error: " << moveError << std::endl;
+                return false;
+            }
+            printSuccessLine("Output written: " + plan.secondaryRequestedOutput);
+        }
+
+        if (!task.builtinId.empty() && !plan.artifactPath.empty()) {
+            artifacts[task.builtinId] = plan.artifactPath;
+        }
+        return true;
+    }
+
     // Execute single module task (dispatch to appropriate method)
     bool executeModuleTask(const ModuleTask& task, const std::string& wfnFile, 
                           int cores, const ExecutionOptions& options) {
@@ -1210,6 +1991,9 @@ public:
                 // to switch the file provided to subsequent Multiwfn invocations.
                 std::string currentWfnFile = finalWfnFile;
                 NewFileCollector collector;
+                // Logical artifacts produced by builtin DSL blocks in this file/variable iteration.
+                // They allow follow-up blocks such as grid=like(complex_den) to refer to earlier output.
+                std::map<std::string, std::string> builtinArtifacts;
 
                 // Track files only for tasks that have a later collect(...)
                 // directive. This keeps workflows without collect unchanged and
@@ -1257,7 +2041,14 @@ public:
                         shouldTrackNewFiles = collector.captureSnapshot(beforeFiles);
                     }
 
-                    if (!executeModuleTask(task, currentWfnFile, finalCores, effectiveOptions)) {
+                    bool taskSuccess = false;
+                    if (task.isBuiltin) {
+                        taskSuccess = executeBuiltinTask(task, currentWfnFile, finalCores, effectiveOptions, builtinArtifacts);
+                    } else {
+                        taskSuccess = executeModuleTask(task, currentWfnFile, finalCores, effectiveOptions);
+                    }
+
+                    if (!taskSuccess) {
                         allSuccess = false;
                     }
 
@@ -1309,6 +2100,9 @@ void printUsage(const char* progName) {
     std::cout << "  %preraw ... end/wait Send literal Multiwfn commands before [main]\n";
     std::cout << "  %raw ... end/wait   Send literal Multiwfn commands\n";
     std::cout << "  collect(dir);       Move files newly created by preceding blocks into dir\n";
+    std::cout << "  bane.cube.make id { ... }     Generate cube data via Multiwfn main function 5\n";
+    std::cout << "  bane.line.profile id { ... }  Preload an interactive 1D line profile via main function 3\n";
+    std::cout << "  bane.plane.map id { ... }     Generate/export a 2D plane map via main function 4\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << progName << " input.inp molecule.fchk\n";
     std::cout << "  " << progName << " -w molecule.fchk input.inp\n";

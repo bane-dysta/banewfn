@@ -377,4 +377,84 @@ TEST_CASE("applyPlaceholderReplacement expands var* in raw commands and resolves
     CHECK(tasks[0].rawCommands == expectedRaw);
 }
 
+
+TEST_CASE("parse builtin bane real-space DSL blocks") {
+    TempDir temp;
+    const auto inpFile = temp.path() / "builtins.inp";
+
+    writeTextFile(inpFile, R"(wfn=complex.fchk
+prefix=case1
+
+bane.cube.make complex_den {
+    from = ${wfn}
+    field = electron_density
+    grid = medium
+    output = ${prefix}_${input}_den.cub
+}
+
+bane.cube.make diff_den {
+    from = ${wfn}
+    field = rho
+    grid = like(complex_den)
+    op = -,fragA.fchk
+    combine = - fragB.fchk
+    output = ${prefix}_${input}_diff.cub
+}
+
+bane.line.profile bond_rho {
+    field = electron_density
+    line = atoms(1,2)
+    output = ${prefix}_${input}_bond.txt
+}
+
+bane.plane.map ring_elf {
+    field = elf
+    plane = atoms(1,2,3)
+    grid = 160,160
+    output = ${prefix}_${input}_plane.txt
+}
+)");
+
+    auto [tasks, wfnFile, cores, customVars, dryrun, nogui] =
+        InputParser::parseInpFileWithWfnAndCoresAndVars(inpFile.string());
+
+    (void)cores;
+    (void)dryrun;
+    (void)nogui;
+
+    REQUIRE(tasks.size() == 4);
+    CHECK(wfnFile == "complex.fchk");
+    REQUIRE(customVars.count("prefix") == 1);
+    CHECK(customVars.at("prefix").at(0) == "case1");
+
+    CHECK(tasks[0].isBuiltin);
+    CHECK(tasks[0].builtinName == "cube.make");
+    CHECK(tasks[0].builtinId == "complex_den");
+    CHECK(tasks[0].params.at("from") == "${wfn}");
+    CHECK(tasks[0].params.at("field") == "electron_density");
+
+    CHECK(tasks[1].isBuiltin);
+    CHECK(tasks[1].builtinName == "cube.make");
+    CHECK(tasks[1].builtinId == "diff_den");
+    REQUIRE(tasks[1].builtinBody.size() == 2);
+    CHECK(tasks[1].builtinBody[0] == "op=-,fragA.fchk");
+    CHECK(tasks[1].builtinBody[1] == "combine=- fragB.fchk");
+
+    CHECK(tasks[2].isBuiltin);
+    CHECK(tasks[2].builtinName == "line.profile");
+    CHECK(tasks[2].params.at("line") == "atoms(1,2)");
+
+    CHECK(tasks[3].isBuiltin);
+    CHECK(tasks[3].builtinName == "plane.map");
+    CHECK(tasks[3].params.at("plane") == "atoms(1,2,3)");
+
+    InputParser::applyPlaceholderReplacement(tasks, "complex.fchk", customVars);
+    CHECK(tasks[0].params.at("from") == "complex.fchk");
+    CHECK(tasks[0].params.at("output") == "case1_complex_den.cub");
+    CHECK(tasks[1].params.at("output") == "case1_complex_diff.cub");
+    CHECK(tasks[2].params.at("output") == "case1_complex_bond.txt");
+    CHECK(tasks[3].params.at("output") == "case1_complex_plane.txt");
+}
+
+
 } // TEST_SUITE("InputParser")

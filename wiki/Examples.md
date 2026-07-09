@@ -164,6 +164,44 @@ collect(${input}_NTOs);
 
 这样每个输入文件都会把自己的新增产物归档到独立目录中。
 
+
+## 实空间函数 builtin 示例
+
+下面的例子用新的高层 DSL 直接调用 Multiwfn 主功能 5/4/3：先生成复合物电子密度 cube，再在同一套 grid 上生成片段密度差 cube，随后导出一个 ELF 平面图数据，并预进入一条键轴上的电子密度剖线。
+
+```ini
+wfn=complex.fchk
+
+bane.cube.make complex_den {
+    field  = electron_density
+    grid   = medium
+    output = ${input}_den.cub
+}
+
+bane.cube.make frag_diff {
+    field  = electron_density
+    grid   = like(complex_den)
+    op     = -,fragA.fchk
+    op     = -,fragB.fchk
+    output = ${input}_frag_density_diff.cub
+}
+
+bane.plane.map ring_elf {
+    field  = elf
+    plane  = atoms(1,2,3)
+    grid   = 200,200
+    output = ${input}_elf_plane.txt
+}
+
+bane.line.profile bond_rho {
+    field  = electron_density
+    line   = atoms(1,2)
+    output = ${input}_rho_1_2.txt
+}
+```
+
+这里的 `op` 是 Multiwfn 主功能 3/4/5 的波函数 custom operation，不是对已有 cube 文件做减法。若只是想让后续 cube 使用前一个 cube 的格点设置，使用 `grid = like(complex_den)` 即可。
+
 ## 自包含 `.bwc` 工作流示例
 例如fmo.bw：
 
