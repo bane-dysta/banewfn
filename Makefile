@@ -1,6 +1,14 @@
 # Default compiler and flags
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -O2
+LDFLAGS ?=
+LDLIBS ?=
+
+# GCC 8 keeps std::filesystem in a separate support library.  Detect the
+# compiler major version so the direct Makefile build matches the CMake build.
+CXX_VERSION := $(shell $(CXX) -dumpfullversion -dumpversion 2>/dev/null)
+CXX_MAJOR := $(word 1,$(subst ., ,$(CXX_VERSION)))
+FILESYSTEM_LIB := $(if $(filter 8,$(CXX_MAJOR)),-lstdc++fs)
 
 # Cross-compilation settings
 MINGW_CXX = x86_64-w64-mingw32-g++
@@ -46,10 +54,10 @@ all: linux
 linux: $(TARGET_LINUX_BANE) $(TARGET_LINUX_PACK)
 
 $(TARGET_LINUX_BANE): $(OBJECTS_LINUX_BANE) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -o $(TARGET_LINUX_BANE) $(OBJECTS_LINUX_BANE)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $(TARGET_LINUX_BANE) $(OBJECTS_LINUX_BANE) $(LDLIBS) $(FILESYSTEM_LIB)
 
 $(TARGET_LINUX_PACK): $(OBJECTS_LINUX_PACK) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -o $(TARGET_LINUX_PACK) $(OBJECTS_LINUX_PACK)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $(TARGET_LINUX_PACK) $(OBJECTS_LINUX_PACK) $(LDLIBS) $(FILESYSTEM_LIB)
 
 $(BUILD_DIR)/%.o: src/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
