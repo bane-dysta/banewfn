@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "test_helpers.h"
+#include "utils.h"
 
 #include <map>
 #include <vector>
@@ -9,8 +10,8 @@
 TEST_SUITE("Config") {
 
 TEST_CASE("getBaseName and replacePlaceholders follow the documented rules") {
-    CHECK(getBaseName("/tmp/demo/test.fchk") == "test");
-    CHECK(getBaseName("plain.wfn") == "plain");
+    CHECK(Utils::getBaseName("/tmp/demo/test.fchk") == "test");
+    CHECK(Utils::getBaseName("plain.wfn") == "plain");
 
     const std::map<std::string, std::string> params = {
         {"name", "orb"},

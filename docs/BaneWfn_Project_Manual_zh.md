@@ -4,7 +4,7 @@
 \vspace*{1.2cm}
 \includegraphics[width=0.40\textwidth]{icon.png}\par
 \vspace{0.8cm}
-{\Huge\bfseries BaneWfn v1.3\par}
+{\Huge\bfseries BaneWfn v1.3.1\par}
 \vspace{1cm}
 {\normalsize Multiwfn工作流调度程序\par}
 \vspace{0.5cm}
@@ -1018,6 +1018,8 @@ banewfn -w <molecule.fchk> <input.inp> [options]
 1. 命令行 `-c/--cores`
 2. 输入文件头部 `core=`
 3. `banewfn.rc` 中的 `cores`
+
+核心数必须写成非负十进制整数。命令行 `-c/--cores` 收到非法值时会直接报错并终止；输入文件 `core=` 或 `banewfn.rc` 中的 `cores` 收到非法值时会给出警告并忽略该设置。
 
 对于需要临时提高并行度的场景，直接使用 `-c` 即可，无需改动脚本本身。
 

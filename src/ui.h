@@ -12,9 +12,7 @@ public:
     static std::string getUserInput(const std::string& prompt);
     
 private:
-    static bool validateFile(const std::string& filepath);
     static void printFileError(const std::string& filepath);
-    static std::string trimQuotes(const std::string& str);
 };
 
 #endif // UI_H

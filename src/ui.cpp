@@ -1,9 +1,7 @@
 #include "ui.h"
 #include "utils.h"
 #include <iostream>
-#include <fstream>
 #include <string>
-#include <cctype>
 
 void UI::printLogo() {
     std::cout << getLogoString();
@@ -23,7 +21,7 @@ std::string UI::getLogoString() {
     logo += u8"  This program only performs a workflow for Multiwfn, so if you use this program for publication,\n";
     logo += u8"    you should cite Multiwfn as Prof. Lu mentioned in its manual.\n";
     logo += u8"  If you would like to cite this program as well, you can use:\n";  
-    logo += u8"    Chiyuan Wei, banewfn, Version 1.3.0, https://github.com/bane-dysta/banewfn (accessed on day month year)\n";   
+    logo += u8"    Chiyuan Wei, banewfn, Version 1.3.1, https://github.com/bane-dysta/banewfn (accessed on day month year)\n";
     logo += u8"    \nLet's start Multiwfn analysis!\n";   
     logo += "\n";
     return logo;
@@ -37,9 +35,9 @@ std::string UI::requestInputFile() {
         std::getline(std::cin, inputFile);
         
         // Remove quotes and trim whitespace
-        std::string cleanedFile = trimQuotes(inputFile);
+        std::string cleanedFile = Utils::trimQuotes(inputFile);
         
-        if (validateFile(cleanedFile)) {
+        if (Utils::fileExists(cleanedFile)) {
             return cleanedFile;
         } else {
             printFileError(cleanedFile);
@@ -55,18 +53,14 @@ std::string UI::requestWavefunctionFile() {
         std::getline(std::cin, wfnFile);
         
         // Remove quotes and trim whitespace
-        std::string cleanedFile = trimQuotes(wfnFile);
+        std::string cleanedFile = Utils::trimQuotes(wfnFile);
         
-        if (validateFile(cleanedFile)) {
+        if (Utils::fileExists(cleanedFile)) {
             return cleanedFile;
         } else {
             printFileError(cleanedFile);
         }
     }
-}
-
-bool UI::validateFile(const std::string& filepath) {
-    return Utils::validateFile(filepath);
 }
 
 void UI::printFileError(const std::string& filepath) {
@@ -78,8 +72,4 @@ std::string UI::getUserInput(const std::string& prompt) {
     std::cout << prompt;
     std::getline(std::cin, input);
     return input;
-}
-
-std::string UI::trimQuotes(const std::string& str) {
-    return Utils::trimQuotes(str);
 }

@@ -32,37 +32,6 @@
 #include <io.h>
 #endif
 
-// Utility function: split string (deprecated - use Utils::split instead)
-std::vector<std::string> split(const std::string& str, char delimiter) {
-    return Utils::split(str, delimiter);
-}
-
-static bool isPlainCustomVarName(const std::string& name) {
-    if (name.empty()) {
-        return false;
-    }
-
-    for (char c : name) {
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool isValidCustomVarName(const std::string& name) {
-    if (isPlainCustomVarName(name)) {
-        return true;
-    }
-
-    if (name.size() > 1 && name.back() == '*') {
-        return isPlainCustomVarName(name.substr(0, name.size() - 1));
-    }
-
-    return name.size() > 5 && name.rfind("len(", 0) == 0 && name.back() == ')' &&
-           isPlainCustomVarName(name.substr(4, name.size() - 5));
-}
-
 namespace {
 
 struct TerminalColorState {
@@ -145,51 +114,41 @@ static std::string replaceOnePlaceholderVar(const std::string& text,
                                            const std::string& var,
                                            const std::string& value) {
     std::string result = text;
-    size_t pos = 0;
+    std::size_t searchPos = 0;
+    VariableSyntax::Placeholder placeholder;
 
-    while ((pos = result.find('$', pos)) != std::string::npos) {
-        size_t endPos = pos + 1;
-        std::string varName;
-        std::string defaultValue;
-
-        if (endPos < result.size() && result[endPos] == '{') {
-            size_t braceStart = endPos + 1;
-            size_t braceEnd = result.find('}', braceStart);
-            if (braceEnd == std::string::npos) {
-                // Malformed placeholder, skip
-                pos = endPos + 1;
-                continue;
-            }
-
-            std::string inside = result.substr(braceStart, braceEnd - braceStart);
-            size_t defaultSep = inside.find(":-");
-            if (defaultSep != std::string::npos) {
-                varName = inside.substr(0, defaultSep);
-                defaultValue = inside.substr(defaultSep + 2);
-            } else {
-                varName = inside;
-            }
-            endPos = braceEnd + 1;
+    while (VariableSyntax::parseNextPlaceholder(result, searchPos, placeholder)) {
+        if (placeholder.name == var) {
+            const std::string replacement =
+                value.empty() && !placeholder.defaultValue.empty() ? placeholder.defaultValue : value;
+            result.replace(placeholder.begin, placeholder.end - placeholder.begin, replacement);
+            searchPos = placeholder.begin + replacement.size();
         } else {
-            while (endPos < result.size() && (isalnum((unsigned char)result[endPos]) || result[endPos] == '_')) {
-                endPos++;
-            }
-            varName = result.substr(pos + 1, endPos - pos - 1);
-        }
-
-        if (varName == var) {
-            std::string repl = value;
-            if (repl.empty() && !defaultValue.empty()) {
-                repl = defaultValue;
-            }
-            result.replace(pos, endPos - pos, repl);
-            pos += repl.size();
-        } else {
-            pos = endPos;
+            searchPos = placeholder.end;
         }
     }
 
     return result;
+}
+
+static void collectPlaceholderNames(const std::string& text, std::set<std::string>& names) {
+    std::size_t searchPos = 0;
+    VariableSyntax::Placeholder placeholder;
+    while (VariableSyntax::parseNextPlaceholder(text, searchPos, placeholder)) {
+        std::string name = placeholder.name;
+        // The list view historically recognized ${name:default} in addition to
+        // the runtime ${name:-default} syntax. Preserve that display-only behavior.
+        if (placeholder.braced && placeholder.defaultValue.empty()) {
+            const std::size_t colon = name.find(':');
+            if (colon != std::string::npos) {
+                name = name.substr(0, colon);
+            }
+        }
+        if (!name.empty()) {
+            names.insert(name);
+        }
+        searchPos = placeholder.end;
+    }
 }
 
 static std::string buildMultiwfnInvocation(const std::string& multiwfnExec,
@@ -230,7 +189,7 @@ static bool taskHasMultiwfnScript(const ModuleTask& task) {
 }
 
 static std::string getTaskDisplayName(const ModuleTask& task) {
-    if (task.isBuiltin) {
+    if (task.isBuiltin()) {
         std::string name = "bane." + task.builtinName;
         if (!task.builtinId.empty()) {
             name += " " + task.builtinId;
@@ -258,7 +217,7 @@ static std::string getMultiwfnFileStem(const ModuleTask& task, const std::string
         stem = task.preRawCommands.empty() ? "raw" : "preraw";
     }
 
-    std::string wfnBaseName = getBaseName(wfnFile);
+    std::string wfnBaseName = Utils::getBaseName(wfnFile);
     if (!wfnBaseName.empty()) {
         stem += "_" + wfnBaseName;
     }
@@ -288,15 +247,8 @@ static std::string getCommandScriptStem(const ModuleTask& task) {
     return stem;
 }
 
-static std::string toLowerAsciiLocal(const std::string& text) {
-    std::string result = text;
-    std::transform(result.begin(), result.end(), result.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return result;
-}
-
 static bool parseBoolLike(const std::string& rawValue, bool defaultValue = false) {
-    const std::string value = toLowerAsciiLocal(Utils::trim(rawValue));
+    const std::string value = Utils::toLowerAscii(Utils::trim(rawValue));
     if (value.empty()) {
         return defaultValue;
     }
@@ -322,7 +274,7 @@ static std::string getBuiltinFileStem(const ModuleTask& task, const std::string&
     if (!task.builtinId.empty()) {
         stem += "_" + sanitizeFileStem(task.builtinId);
     }
-    const std::string wfnBase = getBaseName(wfnFile);
+    const std::string wfnBase = Utils::getBaseName(wfnFile);
     if (!wfnBase.empty()) {
         stem += "_" + sanitizeFileStem(wfnBase);
     }
@@ -333,9 +285,9 @@ static std::string getBuiltinFileStem(const ModuleTask& task, const std::string&
 }
 
 static bool getParamCI(const ModuleTask& task, const std::string& key, std::string& value) {
-    const std::string wanted = toLowerAsciiLocal(key);
+    const std::string wanted = Utils::toLowerAscii(key);
     for (const auto& kv : task.params) {
-        if (toLowerAsciiLocal(kv.first) == wanted) {
+        if (Utils::toLowerAscii(kv.first) == wanted) {
             value = kv.second;
             return true;
         }
@@ -357,7 +309,7 @@ static std::string getParamCIOr(const ModuleTask& task, const std::vector<std::s
 static bool validateBuiltinKeys(const ModuleTask& task, const std::set<std::string>& allowedKeys) {
     bool ok = true;
     for (const auto& kv : task.params) {
-        const std::string key = toLowerAsciiLocal(kv.first);
+        const std::string key = Utils::toLowerAscii(kv.first);
         if (allowedKeys.find(key) == allowedKeys.end()) {
             std::cerr << "Error: Unknown key '" << kv.first << "' in " << getTaskDisplayName(task)
                       << ". This builtin uses strict key checking." << std::endl;
@@ -386,7 +338,7 @@ struct RealSpaceFieldInfo {
 
 static bool resolveRealSpaceField(const std::string& rawField, RealSpaceFieldInfo& info,
                                   std::string& errorMessage) {
-    std::string field = toLowerAsciiLocal(Utils::trim(rawField));
+    std::string field = Utils::toLowerAscii(Utils::trim(rawField));
     field.erase(std::remove(field.begin(), field.end(), '-'), field.end());
     for (char& c : field) {
         if (c == ' ') c = '_';
@@ -455,7 +407,7 @@ static void appendFieldSelection(std::vector<std::string>& commands, const RealS
 }
 
 static std::string normalizeGridQuality(const std::string& rawGrid) {
-    std::string grid = toLowerAsciiLocal(Utils::trim(rawGrid));
+    std::string grid = Utils::toLowerAscii(Utils::trim(rawGrid));
     if (grid.empty()) return "2";
     if (grid == "low" || grid == "coarse" || grid == "preview") return "1";
     if (grid == "medium" || grid == "med" || grid == "normal") return "2";
@@ -467,7 +419,7 @@ static bool appendCubeGridSpec(std::vector<std::string>& commands, const std::st
                                const std::map<std::string, std::string>& artifacts,
                                std::string& errorMessage) {
     std::string grid = Utils::trim(rawGrid.empty() ? std::string("medium") : rawGrid);
-    const std::string lower = toLowerAsciiLocal(grid);
+    const std::string lower = Utils::toLowerAscii(grid);
     if (lower.rfind("like(", 0) == 0 && lower.back() == ')') {
         const size_t open = grid.find('(');
         const size_t close = grid.find_last_of(')');
@@ -525,7 +477,7 @@ static std::vector<std::string> parseBuiltinOperations(const ModuleTask& task, s
         if (value.empty()) continue;
 
         std::vector<std::string> values;
-        const std::string lowerKey = toLowerAsciiLocal(Utils::trim(bodyLine.substr(0, eqPos)));
+        const std::string lowerKey = Utils::toLowerAscii(Utils::trim(bodyLine.substr(0, eqPos)));
         if (lowerKey == "ops" || lowerKey == "operators" || lowerKey == "combines") {
             values = Utils::parseBashArray(value);
         } else {
@@ -550,7 +502,7 @@ static bool appendRealSpaceModePrefix(std::vector<std::string>& commands, const 
         return false;
     }
 
-    std::string mode = toLowerAsciiLocal(getParamCIOr(task, {"mode"}, ""));
+    std::string mode = Utils::toLowerAscii(getParamCIOr(task, {"mode"}, ""));
     if (mode == "promol" || mode == "promolecular") {
         if (!ops.empty()) {
             errorMessage = "mode=promolecular cannot be combined with op/operator/combine";
@@ -597,7 +549,7 @@ static std::vector<std::string> splitSemicolonList(const std::string& raw) {
 
 static bool extractFunctionLikeArg(const std::string& raw, const std::string& funcName, std::string& inside) {
     const std::string trimmed = Utils::trim(raw);
-    const std::string lower = toLowerAsciiLocal(trimmed);
+    const std::string lower = Utils::toLowerAscii(trimmed);
     const std::string prefix = funcName + "(";
     if (lower.rfind(prefix, 0) != 0 || trimmed.empty() || trimmed.back() != ')') {
         return false;
@@ -639,7 +591,7 @@ static bool appendLineSpec(std::vector<std::string>& commands, const std::string
 }
 
 static std::string normalizePlaneGraphType(const std::string& rawGraph) {
-    std::string graph = toLowerAsciiLocal(Utils::trim(rawGraph));
+    std::string graph = Utils::toLowerAscii(Utils::trim(rawGraph));
     if (graph.empty() || graph == "color" || graph == "filled" || graph == "color_filled" || graph == "map") return "1";
     if (graph == "contour" || graph == "contour_line") return "2";
     if (graph == "relief") return "3";
@@ -963,7 +915,7 @@ private:
     std::set<std::string> pendingFiles;
 };
 
-class MultiwfnScriptGenerator {
+class WorkflowRunner {
 private:
     ConfigManager configManager;
     
@@ -972,7 +924,8 @@ public:
     bool loadBaneWfnConfig(const std::string& configFile) {
         return configManager.loadBaneWfnConfig(configFile);
     }
-    
+
+private:
     // Load module-specific conf file
     bool loadModuleConfig(const std::string& moduleName) {
         return configManager.loadModuleConfig(moduleName);
@@ -1014,21 +967,6 @@ public:
         }
         
         return result;
-    }
-    
-    // Parse inp file, return all module tasks
-    std::vector<ModuleTask> parseInpFile(const std::string& inpFile) {
-        return InputParser::parseInpFile(inpFile);
-    }
-    
-    // Parse inp file, return all module tasks and optional wfn file
-    std::pair<std::vector<ModuleTask>, std::string> parseInpFileWithWfn(const std::string& inpFile) {
-        return InputParser::parseInpFileWithWfn(inpFile);
-    }
-    
-    // Parse inp file, return all module tasks, optional wfn file, and core count
-    std::tuple<std::vector<ModuleTask>, std::string, int> parseInpFileWithWfnAndCores(const std::string& inpFile) {
-        return InputParser::parseInpFileWithWfnAndCores(inpFile);
     }
     
     // Generate Multiwfn input script for a single task.
@@ -1211,7 +1149,7 @@ public:
         cmd << "cmd /c \"(";
         
         for (const auto& cmdLine : cmdLines) {
-            std::string trimmedLine = trim(cmdLine);
+            std::string trimmedLine = Utils::trim(cmdLine);
             if (trimmedLine.empty()) {
                 // For empty lines, use echo. to produce empty input
                 cmd << "echo. & ";
@@ -1234,7 +1172,7 @@ public:
         cmd << "(";
         
         for (const auto& cmdLine : cmdLines) {
-            std::string trimmedLine = trim(cmdLine);
+            std::string trimmedLine = Utils::trim(cmdLine);
             if (trimmedLine.empty()) {
                 // For empty lines, use echo without arguments to produce empty input
                 cmd << "echo; ";
@@ -1478,7 +1416,7 @@ public:
                                    BuiltinExecutionPlan& plan) {
         plan = BuiltinExecutionPlan();
 
-        const std::string builtinName = toLowerAsciiLocal(Utils::trim(task.builtinName));
+        const std::string builtinName = Utils::toLowerAscii(Utils::trim(task.builtinName));
         std::string errorMessage;
         RealSpaceFieldInfo field;
         if (!resolveRealSpaceField(getParamCIOr(task, {"field", "type"}, "electron_density"), field, errorMessage)) {
@@ -1699,7 +1637,7 @@ public:
             rawTask.rawCommands = plan.commands;
             rawTask.useWait = true;
             rawTask.blockIndex = task.blockIndex;
-            rawTask.isBuiltin = true;
+            rawTask.kind = TaskKind::Builtin;
             rawTask.builtinName = task.builtinName;
             rawTask.builtinId = task.builtinId;
             success = executeModuleTaskPipe(rawTask, sourceWfn, cores, options);
@@ -1805,39 +1743,11 @@ public:
         return success;
     }
     
-    // Execute all module tasks from an already parsed input file.
-    // Keeping the parse result explicit avoids reparsing the same file and makes
-    // future input-header additions less error-prone than tuple unpacking.
-    bool executeAllTasks(const ParsedInputFile& parsedInput, const std::string& inpFile,
-                        const std::string& wfnFile, int cores, const ExecutionOptions& options) {
-        if (!parsedInput.loaded) {
-            std::cerr << "Error: Input file was not loaded successfully: " << inpFile << std::endl;
-            return false;
-        }
-
-        std::vector<ModuleTask> tasks = parsedInput.tasks;
-        const std::string& inputWfnFile = parsedInput.wfnFile;
-        int inputCores = parsedInput.cores;
-        const auto& fileVars = parsedInput.customVars;
-        bool inputDryrun = parsedInput.dryrun;
-        bool inputNogui = parsedInput.nogui;
-
-        ExecutionOptions effectiveOptions = options;
-        if (inputDryrun) {
-            effectiveOptions.dryrun = true;
-        }
-        if (inputNogui) {
-            effectiveOptions.nogui = true;
-        }
-        
-        // Use wfn file from input file if specified, otherwise use command line argument
-        std::string wfnPattern;
-        if (!wfnFile.empty()) {
-            wfnPattern = wfnFile;          // 命令行/位置参数优先
-        } else {
-            wfnPattern = inputWfnFile;     // 否则回退到输入文件 wfn=
-        }
-        
+public:
+    // Execute a fully resolved workflow. CLI/input/config precedence is handled once
+    // by main; this class only expands and runs the resulting task plan.
+    bool executeAllTasks(const std::vector<ModuleTask>& tasks, const std::string& inpFile,
+                        const std::string& wfnPattern, int cores, const ExecutionOptions& options) {
         // 展开通配符
         std::vector<std::string> wfnFiles = Utils::expandWildcard(wfnPattern);
         
@@ -1854,21 +1764,7 @@ public:
             std::cout << std::endl;
         }
         
-        // Use core count from input file if specified and no cores provided via command line
-        int finalCores = cores;
-        if (cores < 0 && inputCores > 0) {
-            finalCores = inputCores;
-            std::cout << "Using core count from input file: " << finalCores << std::endl;
-        }
-        
-        // Merge with command line variables (command line takes precedence)
-        std::map<std::string, std::vector<std::string>> allCustomVars = effectiveOptions.customVars;
-        for (const auto& var : fileVars) {
-            // Only add if not already set by command line
-            if (allCustomVars.find(var.first) == allCustomVars.end()) {
-                allCustomVars[var.first] = var.second;
-            }
-        }
+        std::map<std::string, std::vector<std::string>> allCustomVars = options.customVars;
 
         // Interactive variables: allow defining "var=?" at the top of input file
         // (or via -v/--var var=?) to request the value from user at runtime.
@@ -1909,10 +1805,10 @@ public:
         }
         std::cout << "\n";
         
-        if (effectiveOptions.dryrun) {
+        if (options.dryrun) {
             std::cout << "\n** DRY-RUN MODE: Only generating command files **\n" << std::endl;
         }
-        if (effectiveOptions.screen) {
+        if (options.screen) {
             std::cout << "\n** SCREEN MODE: Output to screen instead of files **\n" << std::endl;
         }
 
@@ -2003,21 +1899,21 @@ public:
                 for (size_t revIdx = fileTasks.size(); revIdx > 0; --revIdx) {
                     const size_t taskIdx = revIdx - 1;
                     hasCollectAhead[taskIdx] = seenCollectAhead;
-                    if (fileTasks[taskIdx].isCollect) {
+                    if (fileTasks[taskIdx].isCollect()) {
                         seenCollectAhead = true;
                     }
                 }
 
                 for (size_t taskIdx = 0; taskIdx < fileTasks.size(); ++taskIdx) {
                     const auto& task = fileTasks[taskIdx];
-                    if (task.isCollect) {
-                        if (!collector.flushToDirectory(task.collectDir, effectiveOptions.dryrun)) {
+                    if (task.isCollect()) {
+                        if (!collector.flushToDirectory(task.collectDir, options.dryrun)) {
                             allSuccess = false;
                         }
                         continue;
                     }
 
-                    if (task.isWfnRebase) {
+                    if (task.isWfnRebase()) {
                         std::string target = Utils::trim(task.wfnRebaseFile);
                         if (target.empty()) {
                             // Empty rebase target means reset to the original wfn of this iteration.
@@ -2029,23 +1925,23 @@ public:
                         }
 
                         // Warn if file does not exist (still continue; Multiwfn will report errors).
-                        if (!effectiveOptions.dryrun && !Utils::fileExists(currentWfnFile)) {
+                        if (!options.dryrun && !Utils::fileExists(currentWfnFile)) {
                             std::cerr << "Warning: wfn_rebase target file not found: " << currentWfnFile << std::endl;
                         }
                         continue;
                     }
 
                     NewFileCollector::Snapshot beforeFiles;
-                    bool shouldTrackNewFiles = hasCollectAhead[taskIdx] && !effectiveOptions.dryrun;
+                    bool shouldTrackNewFiles = hasCollectAhead[taskIdx] && !options.dryrun;
                     if (shouldTrackNewFiles) {
                         shouldTrackNewFiles = collector.captureSnapshot(beforeFiles);
                     }
 
                     bool taskSuccess = false;
-                    if (task.isBuiltin) {
-                        taskSuccess = executeBuiltinTask(task, currentWfnFile, finalCores, effectiveOptions, builtinArtifacts);
+                    if (task.isBuiltin()) {
+                        taskSuccess = executeBuiltinTask(task, currentWfnFile, cores, options, builtinArtifacts);
                     } else {
-                        taskSuccess = executeModuleTask(task, currentWfnFile, finalCores, effectiveOptions);
+                        taskSuccess = executeModuleTask(task, currentWfnFile, cores, options);
                     }
 
                     if (!taskSuccess) {
@@ -2069,12 +1965,6 @@ public:
         return allSuccess;
     }
     
-    bool executeAllTasks(const std::string& inpFile, const std::string& wfnFile,
-                        int cores, const ExecutionOptions& options) {
-        ParsedInputFile parsedInput = InputParser::parseInpFileDetailed(inpFile);
-        return executeAllTasks(parsedInput, inpFile, wfnFile, cores, options);
-    }
-
     int getCores() const { return configManager.getCores(); }
 };
 
@@ -2171,7 +2061,7 @@ int main(int argc, char* argv[]) {
                 } else {
                     std::cout << "Available module configs in " << confDir << ":\n";
                     for (const auto &f : files) {
-                        std::cout << "  " << getBaseName(f) << std::endl;
+                        std::cout << "  " << Utils::getBaseName(f) << std::endl;
                     }
                 }
                 return 0;
@@ -2183,43 +2073,6 @@ int main(int argc, char* argv[]) {
                 }
                 const ModuleConfig &mc = tmpCm.getModuleConfig(moduleArg);
                 std::cout << "[" << moduleArg << ".conf] summary (section -> variables):\n";
-                // Helper to extract variable names from a command string
-                auto extractVarsFromCommand = [](const std::string &cmd, std::set<std::string> &outVars) {
-                    size_t pos = 0;
-                    while (pos < cmd.size()) {
-                        size_t dollar = cmd.find('$', pos);
-                        if (dollar == std::string::npos) break;
-                        size_t next = dollar + 1;
-                        if (next < cmd.size() && cmd[next] == '{') {
-                            size_t braceEnd = cmd.find('}', next + 1);
-                            if (braceEnd != std::string::npos) {
-                                std::string inside = cmd.substr(next + 1, braceEnd - next - 1);
-                                // support ${var:-default} or ${var:default}
-                                size_t sep = inside.find(":-");
-                                if (sep == std::string::npos) sep = inside.find(':');
-                                std::string varName = (sep == std::string::npos) ? inside : inside.substr(0, sep);
-                                if (!varName.empty()) outVars.insert(varName);
-                                pos = braceEnd + 1;
-                                continue;
-                            } else {
-                                pos = next + 1;
-                                continue;
-                            }
-                        } else {
-                            // $var style
-                            size_t j = next;
-                            while (j < cmd.size() && (isalnum((unsigned char)cmd[j]) || cmd[j] == '_')) j++;
-                            if (j > next) {
-                                outVars.insert(cmd.substr(next, j - next));
-                                pos = j;
-                                continue;
-                            } else {
-                                pos = next;
-                            }
-                        }
-                    }
-                };
-
                 // Show defined sections and list variable names discovered from defaults and commands
                 for (const auto &secPair : mc.sections) {
                     const std::string &sectionName = secPair.first;
@@ -2231,7 +2084,7 @@ int main(int argc, char* argv[]) {
                     }
                     // scan commands for $ placeholders
                     for (const auto &cmdLine : section.commands) {
-                        extractVarsFromCommand(cmdLine, vars);
+                        collectPlaceholderNames(cmdLine, vars);
                     }
 
                     // Print section and variables aligned in two columns (first column fixed width)
@@ -2241,7 +2094,7 @@ int main(int argc, char* argv[]) {
                         // ensure spacing before vars
                         std::cout << std::string(4, ' ');
                     } else {
-                        std::cout << "  " << std::left << std::setw((int)nameWidth) << sectionName << " ";
+                        std::cout << "  " << std::left << std::setw(static_cast<int>(nameWidth)) << sectionName << " ";
                         // reset formatting
                         std::cout << std::right;
                     }
@@ -2259,7 +2112,11 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "-c" || arg == "--cores") {
             if (i + 1 < argc) {
-                cores = std::atoi(argv[i + 1]);
+                if (!Utils::tryParseNonNegativeInt(argv[i + 1], cores)) {
+                    std::cerr << "Error: -c/--cores requires a non-negative integer, got: "
+                              << argv[i + 1] << std::endl;
+                    return 1;
+                }
                 i++;
             } else {
                 std::cerr << "Error: -c/--cores requires an argument" << std::endl;
@@ -2300,10 +2157,10 @@ int main(int argc, char* argv[]) {
                     std::string key = Utils::trim(varArg.substr(0, eqPos));
                     std::string value = Utils::trim(varArg.substr(eqPos + 1));
                     
-                    if (isValidCustomVarName(key) && !key.empty()) {
-                        if (key.size() > 1 && key.back() == '*') {
+                    if (VariableSyntax::isValidCustomVariableName(key)) {
+                        if (VariableSyntax::isListVariableName(key)) {
                             options.customVars[key] = {value};
-                        } else if (key.size() > 5 && key.rfind("len(", 0) == 0 && key.back() == ')') {
+                        } else if (VariableSyntax::isLengthVariableName(key)) {
                             options.customVars[key] = {value};
                         } else {
                             // Parse value as bash array (supports both array and single value)
@@ -2383,7 +2240,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Using wavefunction file from input: " << wfnFile << std::endl;
     }
     
-    MultiwfnScriptGenerator generator;
+    WorkflowRunner runner;
     
     // Search for banewfn.rc
     std::string configFile = findConfigFile(argv[0]);
@@ -2399,7 +2256,7 @@ int main(int argc, char* argv[]) {
     }
     
     // Load banewfn.rc
-    if (!generator.loadBaneWfnConfig(configFile)) {
+    if (!runner.loadBaneWfnConfig(configFile)) {
         pauseIfWindowsDryRun(shouldPauseOnExit);
         return 1;
     }
@@ -2410,12 +2267,12 @@ int main(int argc, char* argv[]) {
             cores = inputCores;
             std::cout << "Using core count from input file: " << cores << std::endl;
         } else {
-            cores = generator.getCores();
+            cores = runner.getCores();
         }
     }
     
     // Execute all module tasks
-    if (!generator.executeAllTasks(parsedInput, inpFile, wfnFile, cores, options)) {
+    if (!runner.executeAllTasks(parsedInput.tasks, inpFile, wfnFile, cores, options)) {
         pauseIfWindowsDryRun(shouldPauseOnExit);
         return 1;
     }

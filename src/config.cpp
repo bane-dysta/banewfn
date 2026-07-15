@@ -20,142 +20,12 @@
 
 namespace {
 
-struct ParsedPlaceholder {
-    size_t pos;
-    size_t endPos;
-    std::string varName;
-    std::string defaultValue;
-};
-
-bool parseNextPlaceholder(const std::string& text, size_t startPos, ParsedPlaceholder& out) {
-    const size_t pos = text.find('$', startPos);
-    if (pos == std::string::npos) {
-        return false;
-    }
-
-    size_t endPos = pos + 1;
-    out.pos = pos;
-    out.defaultValue.clear();
-    out.varName.clear();
-
-    if (endPos < text.length() && text[endPos] == '{') {
-        const size_t braceStart = endPos + 1;
-        const size_t braceEnd = text.find('}', braceStart);
-        if (braceEnd != std::string::npos) {
-            const std::string inside = text.substr(braceStart, braceEnd - braceStart);
-            const size_t defaultSep = inside.find(":-");
-            if (defaultSep != std::string::npos) {
-                out.varName = inside.substr(0, defaultSep);
-                out.defaultValue = inside.substr(defaultSep + 2);
-            } else {
-                out.varName = inside;
-            }
-            out.endPos = braceEnd + 1;
-            return true;
-        }
-    }
-
-    while (endPos < text.length() &&
-           (std::isalnum(static_cast<unsigned char>(text[endPos])) || text[endPos] == '_')) {
-        endPos++;
-    }
-    out.varName = text.substr(pos + 1, endPos - pos - 1);
-    out.endPos = endPos;
-    return true;
-}
-
-bool isLenVariableName(const std::string& varName, std::string* baseName = nullptr) {
-    if (varName.size() <= 5 || varName.rfind("len(", 0) != 0 || varName.back() != ')') {
-        return false;
-    }
-
-    const std::string base = varName.substr(4, varName.size() - 5);
-    if (base.empty()) {
-        return false;
-    }
-
-    if (baseName != nullptr) {
-        *baseName = base;
-    }
-    return true;
-}
-
-bool isListVariableName(const std::string& varName, std::string* baseName = nullptr) {
-    if (varName.size() <= 1 || varName.back() != '*') {
-        return false;
-    }
-
-    const std::string base = varName.substr(0, varName.size() - 1);
-    if (base.empty()) {
-        return false;
-    }
-
-    if (baseName != nullptr) {
-        *baseName = base;
-    }
-    return true;
-}
-
-bool parseIndexedVariableName(const std::string& varName, std::string* baseName, int* index) {
-    size_t splitPos = varName.size();
-    while (splitPos > 0 && std::isdigit(static_cast<unsigned char>(varName[splitPos - 1]))) {
-        splitPos--;
-    }
-
-    if (splitPos == 0 || splitPos == varName.size()) {
-        return false;
-    }
-
-    const std::string base = varName.substr(0, splitPos);
-    const std::string indexText = varName.substr(splitPos);
-    if (base.empty() || indexText.empty()) {
-        return false;
-    }
-
-    const int parsedIndex = std::atoi(indexText.c_str());
-    if (parsedIndex <= 0) {
-        return false;
-    }
-
-    if (baseName != nullptr) {
-        *baseName = base;
-    }
-    if (index != nullptr) {
-        *index = parsedIndex;
-    }
-    return true;
-}
-
 std::vector<std::string> parseListLiteral(const std::string& rawValue) {
     const std::string trimmedValue = Utils::trim(rawValue);
     if (trimmedValue.empty()) {
         return {};
     }
     return Utils::parseBashArray(trimmedValue);
-}
-
-std::string serializeListValues(const std::vector<std::string>& values) {
-    if (values.empty()) {
-        return "";
-    }
-
-    if (values.size() == 1) {
-        return values.front();
-    }
-
-    std::string result = "(";
-    for (size_t i = 0; i < values.size(); ++i) {
-        if (i > 0) {
-            result += " ";
-        }
-        if (values[i].empty()) {
-            result += "\"\"";
-        } else {
-            result += values[i];
-        }
-    }
-    result += ")";
-    return result;
 }
 
 std::vector<std::string> collectListValues(const std::map<std::string, std::string>& params,
@@ -172,7 +42,8 @@ std::vector<std::string> collectListValues(const std::map<std::string, std::stri
     for (const auto& kv : params) {
         std::string indexedBase;
         int index = 0;
-        if (parseIndexedVariableName(kv.first, &indexedBase, &index) && indexedBase == baseName) {
+        if (VariableSyntax::parseIndexedVariableName(kv.first, &indexedBase, &index) &&
+            indexedBase == baseName) {
             indexedValues.push_back({index, kv.second});
         }
     }
@@ -181,6 +52,7 @@ std::vector<std::string> collectListValues(const std::map<std::string, std::stri
               [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
 
     std::vector<std::string> values;
+    values.reserve(indexedValues.size());
     for (const auto& item : indexedValues) {
         values.push_back(item.second);
     }
@@ -192,34 +64,34 @@ std::string resolveScalarPlaceholderValue(const std::string& varName,
                                           const std::map<std::string, std::string>& params) {
     const auto it = params.find(varName);
     if (it != params.end() && !it->second.empty()) {
-        if (isListVariableName(varName)) {
+        if (VariableSyntax::isListVariableName(varName)) {
             const std::string baseName = varName.substr(0, varName.size() - 1);
             const std::vector<std::string> values = collectListValues(params, baseName);
             if (!values.empty()) {
-                return serializeListValues(values);
+                return VariableSyntax::serializeListValues(values);
             }
         }
         return it->second;
     }
 
     std::string baseName;
-    if (isLenVariableName(varName, &baseName)) {
+    if (VariableSyntax::isLengthVariableName(varName, &baseName)) {
         const std::vector<std::string> values = collectListValues(params, baseName);
         if (!values.empty()) {
             return std::to_string(values.size());
         }
     }
 
-    if (isListVariableName(varName, &baseName)) {
+    if (VariableSyntax::isListVariableName(varName, &baseName)) {
         const std::vector<std::string> values = collectListValues(params, baseName);
         if (!values.empty()) {
-            return serializeListValues(values);
+            return VariableSyntax::serializeListValues(values);
         }
     }
 
     if (!defaultValue.empty()) {
-        if (isListVariableName(varName)) {
-            return serializeListValues(parseListLiteral(defaultValue));
+        if (VariableSyntax::isListVariableName(varName)) {
+            return VariableSyntax::serializeListValues(parseListLiteral(defaultValue));
         }
         return defaultValue;
     }
@@ -281,9 +153,9 @@ std::string expandPath(const std::string& path) {
 // Utility function: get executable directory path
 std::string getExecutableDir() {
 #ifdef PLATFORM_WINDOWS
-    char result[MAX_PATH];
+    char result[MAX_PATH] = {};
     DWORD count = GetModuleFileNameA(NULL, result, MAX_PATH);
-    if (count != 0) {
+    if (count != 0 && count < MAX_PATH) {
         // Extract directory from full path
         char drive[_MAX_DRIVE];
         char dir[_MAX_DIR];
@@ -300,16 +172,16 @@ std::string getExecutableDir() {
     }
     return "";
 #else
-    char result[PATH_MAX];
-    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
-    
-    if (count != -1) {
+    char result[PATH_MAX + 1] = {};
+    const ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+
+    if (count > 0 && count <= PATH_MAX) {
         result[count] = '\0';
         char* dir = dirname(result);
         return std::string(dir);
     }
     
-    // Fallback: try to get from argv[0] if /proc/self/exe fails
+    // The caller can fall back to the argv[0] path when this lookup fails.
     return "";
 #endif
 }
@@ -320,14 +192,21 @@ bool fileExists(const std::string& filepath) {
 }
 
 // Utility function: find config file with priority
-std::string findConfigFile(const std::string& /*executablePath*/) {
+std::string findConfigFile(const std::string& executablePath) {
     std::vector<std::string> searchPaths;
     
     // Priority 1: Current directory
     searchPaths.push_back("./banewfn.rc");
     
-    // Priority 2: Executable directory
+    // Priority 2: Executable directory. Platform APIs are preferred; argv[0]
+    // remains a useful fallback on systems without /proc/self/exe.
     std::string execDir = getExecutableDir();
+    if (execDir.empty()) {
+        const std::size_t lastSlash = executablePath.find_last_of("/\\");
+        if (lastSlash != std::string::npos) {
+            execDir = executablePath.substr(0, lastSlash);
+        }
+    }
     if (!execDir.empty()) {
         searchPaths.push_back(execDir + "/banewfn.rc");
     }
@@ -357,7 +236,7 @@ std::string findConfigFile(const std::string& /*executablePath*/) {
     std::cout << std::endl;
     
     for (const auto& path : searchPaths) {
-        if (fileExists(path)) {
+        if (Utils::fileExists(path)) {
             std::cout << "Found: " << path << std::endl;
             return path;
         }
@@ -366,23 +245,9 @@ std::string findConfigFile(const std::string& /*executablePath*/) {
     return "";
 }
 
-// Utility function: extract base filename (without path and extension)
+// Compatibility shim; new code should use Utils::getBaseName directly.
 std::string getBaseName(const std::string& filepath) {
-    std::string filename = filepath;
-    
-    // Remove path
-    size_t lastSlash = filename.find_last_of("/\\");
-    if (lastSlash != std::string::npos) {
-        filename = filename.substr(lastSlash + 1);
-    }
-    
-    // Remove extension
-    size_t lastDot = filename.find_last_of('.');
-    if (lastDot != std::string::npos) {
-        filename = filename.substr(0, lastDot);
-    }
-    
-    return filename;
+    return Utils::getBaseName(filepath);
 }
 
 // Load banewfn.rc configuration file
@@ -395,7 +260,7 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile, bool requir
     
     std::string line;
     while (std::getline(file, line)) {
-        line = trim(line);
+        line = Utils::trim(line);
         
         // 去除行内注释
         line = Utils::removeInlineComment(line);
@@ -404,23 +269,18 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile, bool requir
         
         size_t pos = line.find('=');
         if (pos != std::string::npos) {
-            std::string key = trim(line.substr(0, pos));
-            std::string value = trim(line.substr(pos + 1));
+            std::string key = Utils::trim(line.substr(0, pos));
+            std::string value = Utils::trim(line.substr(pos + 1));
             
             if (key == "Multiwfn_exec") {
                 config.multiwfnExec = expandPath(value);
             } else if (key == "confpath") {
                 config.confPath = expandPath(value);
             } else if (key == "cores") {
-                try {
-                    int parsedCores = std::stoi(value);
-                    if (parsedCores < 0) {
-                        std::cerr << "Warning: Invalid negative cores value in config file: "
-                                  << value << ". Keeping default: " << config.cores << std::endl;
-                    } else {
-                        config.cores = parsedCores;
-                    }
-                } catch (const std::exception&) {
+                int parsedCores = 0;
+                if (Utils::tryParseNonNegativeInt(value, parsedCores)) {
+                    config.cores = parsedCores;
+                } else {
                     std::cerr << "Warning: Invalid cores value in config file: "
                               << value << ". Keeping default: " << config.cores << std::endl;
                 }
@@ -457,7 +317,7 @@ bool ConfigManager::parseModuleConfigStream(std::istream& in, const std::string&
     bool inQuitSection = false;
 
     while (std::getline(in, line)) {
-        line = trim(line);
+        line = Utils::trim(line);
 
         // 去除行内注释
         line = Utils::removeInlineComment(line);
@@ -499,8 +359,8 @@ bool ConfigManager::parseModuleConfigStream(std::istream& in, const std::string&
             if (inDefaultBlock) {
                 size_t pos = line.find('=');
                 if (pos != std::string::npos) {
-                    std::string key = trim(line.substr(0, pos));
-                    std::string value = trim(line.substr(pos + 1));
+                    std::string key = Utils::trim(line.substr(0, pos));
+                    std::string value = Utils::trim(line.substr(pos + 1));
                     if (value.length() >= 2 && value[0] == '"' && value[value.length()-1] == '"') {
                         value = value.substr(1, value.length() - 2);
                     }
@@ -574,13 +434,13 @@ std::string replacePlaceholders(const std::string& cmd,
                                const std::map<std::string, std::string>& params) {
     std::string result = cmd;
 
-    ParsedPlaceholder placeholder;
+    VariableSyntax::Placeholder placeholder;
     size_t searchPos = 0;
-    while (parseNextPlaceholder(result, searchPos, placeholder)) {
+    while (VariableSyntax::parseNextPlaceholder(result, searchPos, placeholder)) {
         const std::string value = resolveScalarPlaceholderValue(
-            placeholder.varName, placeholder.defaultValue, params);
-        result.replace(placeholder.pos, placeholder.endPos - placeholder.pos, value);
-        searchPos = placeholder.pos + value.length();
+            placeholder.name, placeholder.defaultValue, params);
+        result.replace(placeholder.begin, placeholder.end - placeholder.begin, value);
+        searchPos = placeholder.begin + value.length();
     }
 
     return result;
@@ -591,15 +451,15 @@ std::vector<std::string> replacePlaceholdersExpanded(const std::string& cmd,
     std::vector<std::string> expandedLines = {""};
 
     size_t cursor = 0;
-    ParsedPlaceholder placeholder;
-    while (parseNextPlaceholder(cmd, cursor, placeholder)) {
-        const std::string literal = cmd.substr(cursor, placeholder.pos - cursor);
+    VariableSyntax::Placeholder placeholder;
+    while (VariableSyntax::parseNextPlaceholder(cmd, cursor, placeholder)) {
+        const std::string literal = cmd.substr(cursor, placeholder.begin - cursor);
         for (auto& line : expandedLines) {
             line += literal;
         }
 
         std::string baseName;
-        if (isListVariableName(placeholder.varName, &baseName)) {
+        if (VariableSyntax::isListVariableName(placeholder.name, &baseName)) {
             std::vector<std::string> values = collectListValues(params, baseName);
             if (values.empty() && !placeholder.defaultValue.empty()) {
                 values = parseListLiteral(placeholder.defaultValue);
@@ -619,13 +479,13 @@ std::vector<std::string> replacePlaceholdersExpanded(const std::string& cmd,
             expandedLines.swap(nextLines);
         } else {
             const std::string replacement = resolveScalarPlaceholderValue(
-                placeholder.varName, placeholder.defaultValue, params);
+                placeholder.name, placeholder.defaultValue, params);
             for (auto& line : expandedLines) {
                 line += replacement;
             }
         }
 
-        cursor = placeholder.endPos;
+        cursor = placeholder.end;
     }
 
     const std::string tail = cmd.substr(cursor);

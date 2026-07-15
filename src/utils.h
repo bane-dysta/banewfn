@@ -1,9 +1,36 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <cstddef>
 #include <map>
 #include <string>
 #include <vector>
+
+/**
+ * @brief BaneWfn variable and placeholder grammar shared by input/config/CLI layers.
+ *
+ * Keeping these rules in one place prevents the three parsers from accepting subtly
+ * different forms of the same variable name or placeholder.
+ */
+namespace VariableSyntax {
+
+struct Placeholder {
+    std::size_t begin = 0;
+    std::size_t end = 0;
+    std::string name;
+    std::string defaultValue;
+    bool braced = false;
+};
+
+bool parseNextPlaceholder(const std::string& text, std::size_t startPos, Placeholder& out);
+bool isPlainVariableName(const std::string& name);
+bool isListVariableName(const std::string& name, std::string* baseName = nullptr);
+bool isLengthVariableName(const std::string& name, std::string* baseName = nullptr);
+bool parseIndexedVariableName(const std::string& name, std::string* baseName, int* index);
+bool isValidCustomVariableName(const std::string& name);
+std::string serializeListValues(const std::vector<std::string>& values);
+
+} // namespace VariableSyntax
 
 /**
  * @brief 通用工具类，包含字符串处理、文件操作等常用功能
@@ -16,6 +43,16 @@ public:
      * @return 去除空白字符后的字符串
      */
     static std::string trim(const std::string& str);
+
+    /**
+     * @brief Convert ASCII letters to lower case without locale-dependent behavior.
+     */
+    static std::string toLowerAscii(const std::string& str);
+
+    /**
+     * @brief Parse a non-negative decimal integer without partial matches or overflow.
+     */
+    static bool tryParseNonNegativeInt(const std::string& text, int& value);
     
     /**
      * @brief 去除字符串首尾的引号
@@ -45,6 +82,11 @@ public:
      * @return 文件存在返回true，否则返回false
      */
     static bool validateFile(const std::string& filepath);
+
+    /**
+     * @brief Extract the filename without directory and final extension.
+     */
+    static std::string getBaseName(const std::string& filepath);
     
     /**
      * @brief 去除字符串中的行内注释（# 及其后面），但保留以下情况：

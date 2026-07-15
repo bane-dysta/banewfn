@@ -34,7 +34,7 @@ struct BaneWfnConfig {
     BaneWfnConfig() : cores(0) {}
 };
 
-// Utility functions
+// Runtime/path helpers. Generic wrappers are retained for source compatibility.
 std::string trim(const std::string& str);
 std::string expandPath(const std::string& path);
 std::string getExecutableDir();

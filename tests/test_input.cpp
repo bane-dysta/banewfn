@@ -118,7 +118,7 @@ collect(${prefix}_files);
     CHECK(moduleTask.rawCommands == expectedRaw);
 
     const auto& rebaseTask = tasks[1];
-    CHECK(rebaseTask.isWfnRebase);
+    CHECK(rebaseTask.isWfnRebase());
     CHECK(rebaseTask.wfnRebaseFile == "${prefix}.fchk");
 
     const auto& commandTask = tasks[2];
@@ -134,7 +134,7 @@ collect(${prefix}_files);
     CHECK(commandTask.commands == expectedCommands);
 
     const auto& collectTask = tasks[3];
-    CHECK(collectTask.isCollect);
+    CHECK(collectTask.isCollect());
     CHECK(collectTask.collectDir == "${prefix}_files");
 }
 
@@ -176,7 +176,7 @@ collect(NTOs);
     CHECK(parsed.tasks[1].commands[0] == "#!/bin/bash");
     CHECK(parsed.tasks[1].commands[1] == "echo abc > TEST.txt");
 
-    CHECK(parsed.tasks[2].isWfnRebase);
+    CHECK(parsed.tasks[2].isWfnRebase());
 
     CHECK(parsed.tasks[3].moduleName == "fmo");
     REQUIRE(parsed.tasks[3].postProcessSteps.size() == 2);
@@ -185,7 +185,7 @@ collect(NTOs);
     CHECK(parsed.tasks[3].postProcessSteps[1].first == "orb");
     CHECK(parsed.tasks[3].postProcessSteps[1].second.at("index") == "l");
 
-    CHECK(parsed.tasks[4].isCollect);
+    CHECK(parsed.tasks[4].isCollect());
     CHECK(parsed.tasks[4].collectDir == "NTOs");
 }
 
@@ -246,12 +246,12 @@ TEST_CASE("applyPlaceholderReplacement handles input custom file and reserved ou
     task.commands = {"echo ${prefix}", "echo ${missing}"};
 
     ModuleTask rebaseTask;
-    rebaseTask.isWfnRebase = true;
+    rebaseTask.kind = TaskKind::WfnRebase;
     rebaseTask.wfnRebaseFile = "${prefix}_${input}_${state}.fchk";
 
     std::vector<ModuleTask> tasks = {task, rebaseTask};
     ModuleTask collectTask;
-    collectTask.isCollect = true;
+    collectTask.kind = TaskKind::Collect;
     collectTask.collectDir = "${prefix}_${input}_dir";
     tasks.push_back(collectTask);
     const std::map<std::string, std::vector<std::string>> customVars = {
@@ -427,24 +427,24 @@ bane.plane.map ring_elf {
     REQUIRE(customVars.count("prefix") == 1);
     CHECK(customVars.at("prefix").at(0) == "case1");
 
-    CHECK(tasks[0].isBuiltin);
+    CHECK(tasks[0].isBuiltin());
     CHECK(tasks[0].builtinName == "cube.make");
     CHECK(tasks[0].builtinId == "complex_den");
     CHECK(tasks[0].params.at("from") == "${wfn}");
     CHECK(tasks[0].params.at("field") == "electron_density");
 
-    CHECK(tasks[1].isBuiltin);
+    CHECK(tasks[1].isBuiltin());
     CHECK(tasks[1].builtinName == "cube.make");
     CHECK(tasks[1].builtinId == "diff_den");
     REQUIRE(tasks[1].builtinBody.size() == 2);
     CHECK(tasks[1].builtinBody[0] == "op=-,fragA.fchk");
     CHECK(tasks[1].builtinBody[1] == "combine=- fragB.fchk");
 
-    CHECK(tasks[2].isBuiltin);
+    CHECK(tasks[2].isBuiltin());
     CHECK(tasks[2].builtinName == "line.profile");
     CHECK(tasks[2].params.at("line") == "atoms(1,2)");
 
-    CHECK(tasks[3].isBuiltin);
+    CHECK(tasks[3].isBuiltin());
     CHECK(tasks[3].builtinName == "plane.map");
     CHECK(tasks[3].params.at("plane") == "atoms(1,2,3)");
 
@@ -456,5 +456,29 @@ bane.plane.map ring_elf {
     CHECK(tasks[3].params.at("output") == "case1_complex_plane.txt");
 }
 
+
+TEST_CASE("invalid core header is ignored instead of silently becoming zero") {
+    TempDir temp;
+    const auto inpFile = temp.path() / "invalid_core.bw";
+    writeTextFile(inpFile, "core=not-a-number\n%raw\nq\nend\n");
+
+    const ParsedInputFile parsed = InputParser::parseInpFileDetailed(inpFile.string());
+    REQUIRE(parsed.loaded);
+    CHECK(parsed.cores == -1);
+}
+
+TEST_CASE("ModuleTask kind represents exactly one execution category") {
+    ModuleTask task;
+    CHECK(task.isWorkflow());
+    CHECK_FALSE(task.isWfnRebase());
+    CHECK_FALSE(task.isCollect());
+    CHECK_FALSE(task.isBuiltin());
+
+    task.kind = TaskKind::Collect;
+    CHECK_FALSE(task.isWorkflow());
+    CHECK(task.isCollect());
+    CHECK_FALSE(task.isWfnRebase());
+    CHECK_FALSE(task.isBuiltin());
+}
 
 } // TEST_SUITE("InputParser")

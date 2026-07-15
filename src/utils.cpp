@@ -1,9 +1,11 @@
 #include "utils.h"
+#include <charconv>
 #include <fstream>
 #include <functional>
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <system_error>
 #ifdef _WIN32
 #include <windows.h>
 #include <direct.h>
@@ -12,11 +14,208 @@
 #include <sys/stat.h>
 #endif
 
+namespace {
+
+constexpr bool isAsciiDigit(unsigned char c) noexcept {
+    return c >= static_cast<unsigned char>('0') && c <= static_cast<unsigned char>('9');
+}
+
+constexpr bool isAsciiLetter(unsigned char c) noexcept {
+    return (c >= static_cast<unsigned char>('A') && c <= static_cast<unsigned char>('Z')) ||
+           (c >= static_cast<unsigned char>('a') && c <= static_cast<unsigned char>('z'));
+}
+
+constexpr bool isAsciiAlnum(unsigned char c) noexcept {
+    return isAsciiLetter(c) || isAsciiDigit(c);
+}
+
+} // namespace
+
+namespace VariableSyntax {
+
+bool parseNextPlaceholder(const std::string& text, std::size_t startPos, Placeholder& out) {
+    const std::size_t pos = text.find('$', startPos);
+    if (pos == std::string::npos) {
+        return false;
+    }
+
+    std::size_t endPos = pos + 1;
+    out.begin = pos;
+    out.end = endPos;
+    out.name.clear();
+    out.defaultValue.clear();
+    out.braced = false;
+
+    if (endPos < text.size() && text[endPos] == '{') {
+        const std::size_t braceStart = endPos + 1;
+        const std::size_t braceEnd = text.find('}', braceStart);
+        if (braceEnd != std::string::npos) {
+            const std::string inside = text.substr(braceStart, braceEnd - braceStart);
+            const std::size_t defaultSep = inside.find(":-");
+            if (defaultSep != std::string::npos) {
+                out.name = inside.substr(0, defaultSep);
+                out.defaultValue = inside.substr(defaultSep + 2);
+            } else {
+                out.name = inside;
+            }
+            out.end = braceEnd + 1;
+            out.braced = true;
+            return true;
+        }
+    }
+
+    while (endPos < text.size() &&
+           (isAsciiAlnum(static_cast<unsigned char>(text[endPos])) || text[endPos] == '_')) {
+        ++endPos;
+    }
+    out.name = text.substr(pos + 1, endPos - pos - 1);
+    out.end = endPos;
+    return true;
+}
+
+bool isPlainVariableName(const std::string& name) {
+    if (name.empty()) {
+        return false;
+    }
+
+    return std::all_of(name.begin(), name.end(), [](unsigned char c) {
+        return isAsciiAlnum(c) || c == '_';
+    });
+}
+
+bool isListVariableName(const std::string& name, std::string* baseName) {
+    if (name.size() <= 1 || name.back() != '*') {
+        return false;
+    }
+
+    const std::string base = name.substr(0, name.size() - 1);
+    if (!isPlainVariableName(base)) {
+        return false;
+    }
+
+    if (baseName != nullptr) {
+        *baseName = base;
+    }
+    return true;
+}
+
+bool isLengthVariableName(const std::string& name, std::string* baseName) {
+    if (name.size() <= 5 || name.rfind("len(", 0) != 0 || name.back() != ')') {
+        return false;
+    }
+
+    const std::string base = name.substr(4, name.size() - 5);
+    if (!isPlainVariableName(base)) {
+        return false;
+    }
+
+    if (baseName != nullptr) {
+        *baseName = base;
+    }
+    return true;
+}
+
+bool parseIndexedVariableName(const std::string& name, std::string* baseName, int* index) {
+    std::size_t splitPos = name.size();
+    while (splitPos > 0 && isAsciiDigit(static_cast<unsigned char>(name[splitPos - 1]))) {
+        --splitPos;
+    }
+
+    if (splitPos == 0 || splitPos == name.size()) {
+        return false;
+    }
+
+    const std::string base = name.substr(0, splitPos);
+    if (!isPlainVariableName(base)) {
+        return false;
+    }
+
+    int parsedIndex = 0;
+    const char* first = name.data() + splitPos;
+    const char* last = name.data() + name.size();
+    const auto parsed = std::from_chars(first, last, parsedIndex);
+    if (parsed.ec != std::errc() || parsed.ptr != last || parsedIndex <= 0) {
+        return false;
+    }
+
+    if (baseName != nullptr) {
+        *baseName = base;
+    }
+    if (index != nullptr) {
+        *index = parsedIndex;
+    }
+    return true;
+}
+
+bool isValidCustomVariableName(const std::string& name) {
+    return isPlainVariableName(name) || isListVariableName(name) || isLengthVariableName(name);
+}
+
+std::string serializeListValues(const std::vector<std::string>& values) {
+    if (values.empty()) {
+        return "";
+    }
+
+    if (values.size() == 1) {
+        return values.front();
+    }
+
+    std::string result = "(";
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            result += " ";
+        }
+        result += values[i].empty() ? "\"\"" : values[i];
+    }
+    result += ")";
+    return result;
+}
+
+} // namespace VariableSyntax
+
 std::string Utils::trim(const std::string& str) {
     size_t first = str.find_first_not_of(" \t\r\n");
     if (first == std::string::npos) return "";
     size_t last = str.find_last_not_of(" \t\r\n");
     return str.substr(first, last - first + 1);
+}
+
+std::string Utils::toLowerAscii(const std::string& str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+        if (c >= static_cast<unsigned char>('A') && c <= static_cast<unsigned char>('Z')) {
+            return static_cast<char>(c - static_cast<unsigned char>('A') + static_cast<unsigned char>('a'));
+        }
+        return static_cast<char>(c);
+    });
+    return result;
+}
+
+bool Utils::tryParseNonNegativeInt(const std::string& text, int& value) {
+    const std::string cleaned = trim(text);
+    if (cleaned.empty()) {
+        return false;
+    }
+
+    int parsedValue = 0;
+    const char* first = cleaned.data();
+    const char* last = first + cleaned.size();
+    if (*first == '-') {
+        return false;
+    }
+    if (*first == '+') {
+        ++first;
+        if (first == last) {
+            return false;
+        }
+    }
+    const auto parsed = std::from_chars(first, last, parsedValue);
+    if (parsed.ec != std::errc() || parsed.ptr != last || parsedValue < 0) {
+        return false;
+    }
+
+    value = parsedValue;
+    return true;
 }
 
 std::string Utils::trimQuotes(const std::string& str) {
@@ -63,6 +262,22 @@ bool Utils::fileExists(const std::string& filepath) {
 
 bool Utils::validateFile(const std::string& filepath) {
     return fileExists(filepath);
+}
+
+std::string Utils::getBaseName(const std::string& filepath) {
+    std::string filename = filepath;
+
+    const std::size_t lastSlash = filename.find_last_of("/\\");
+    if (lastSlash != std::string::npos) {
+        filename = filename.substr(lastSlash + 1);
+    }
+
+    const std::size_t lastDot = filename.find_last_of('.');
+    if (lastDot != std::string::npos) {
+        filename = filename.substr(0, lastDot);
+    }
+
+    return filename;
 }
 
 std::string Utils::removeInlineComment(const std::string& str) {
