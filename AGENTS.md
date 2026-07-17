@@ -14,6 +14,7 @@
 - 若用户要求撤回修改A，同时提供已打过修改A补丁和未打过修改A补丁的patch
 - patch应当采用Git unified diff format，类似diff --git a/foo.c b/foo.c，可以在项目根目录直接git apply
 - 涉及到多个项目修改时，请就每个项目分别给出patch
+- 即使用户给的任务很大，你无法一次完成，也要给出当前pre-alpha版本的patch和源码包，让我可以了解你的进度，把握下一步的方向
 
 ## Testing
 - 修改源码后，至少应当跑通测试再交付；必要时可以添加新的测试
