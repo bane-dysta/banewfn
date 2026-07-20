@@ -22,6 +22,7 @@ std::string UI::getLogoString() {
     logo += u8"    you should cite Multiwfn as Prof. Lu mentioned in its manual.\n";
     logo += u8"  If you would like to cite this program as well, you can use:\n";  
     logo += u8"    Chiyuan Wei, banewfn, Version 1.3.1, https://github.com/bane-dysta/banewfn (accessed on day month year)\n";
+    logo += u8"    or DOI: 10.5281/zenodo.21407311\n";
     logo += u8"    \nLet's start Multiwfn analysis!\n";   
     logo += "\n";
     return logo;
