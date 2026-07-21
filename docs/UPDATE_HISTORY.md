@@ -22,5 +22,10 @@
 - 修复非法或超出整数范围的核心数被静默解析为 0 的问题
 - 修复 Linux 可执行文件路径读取的边界问题，并整理任务类型与重复工具逻辑
 
-
-
+# 1.4.0 - 26.7.21
+- 新增结构化 `%grep` DSL：支持 `between`、`inside`、`after`、`before`、`match` 与重复范围选择
+- 新增 `scan`、`split`、`cols`、行切片、过滤和 `expect` 验证管线
+- 新增普通文本/TSV/CSV/JSONL 输出，以及 `emit atomvec`、`emit kv`
+- 模块执行顺序调整为 `Multiwfn → %grep → %command`
+- 支持无需波函数文件和 `banewfn.rc` 的独立 `%grep` / `%command` 工作流
+- `%grep` 输出自动创建父目录并采用临时文件替换，避免失败时留下半写入结果

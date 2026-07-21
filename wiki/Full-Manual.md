@@ -10,7 +10,7 @@
 
 BaneWfn 是一个面向 Multiwfn 的模块化工作流程序。它并不替代 Multiwfn 本身，也不额外实现量子化学分析算法，而是把 Multiwfn 中那些固定、重复、容易出错的操作路径抽象为可复用脚本，从而把“手工菜单操作”转化为“可维护、可共享、可批量执行的工作流”。
 
-在设计上，BaneWfn 以文本脚本为核心：输入文件负责描述任务顺序、变量和批处理逻辑，`.conf` 模块配置负责封装常用菜单路径，`%preraw` / `%raw` 与 `%command` 则分别承担前置原始 Multiwfn 输入、普通原始输入和后处理命令。借助这一组合方式，用户既可以沉淀稳定流程，也可以在同一份脚本中插入一次性的临时补丁，而不必为了少量例外单独维护另一套流程。
+在设计上，BaneWfn 以文本脚本为核心：输入文件负责描述任务顺序、变量和批处理逻辑，`.conf` 模块配置负责封装常用菜单路径，`%preraw` / `%raw` 承担原始 Multiwfn 输入，`%grep` 负责从输出中提取文本或结构化字段，`%command` 负责最终后处理。借助这一组合方式，用户既可以沉淀稳定流程，也可以在同一份脚本中插入一次性的临时补丁，而不必为了少量例外单独维护另一套流程。
 
 从使用体验来看，BaneWfn 更像是一层“工作流胶水”。它把 Multiwfn、shell / batch 命令以及项目中的命名规范、归档习惯和批量执行需求连接在一起，适合用于实验室内部复用、项目归档和跨平台共享。
 
@@ -28,10 +28,10 @@ BaneWfn 特别适合以下几类工作场景：
 
 BaneWfn 的价值不在于增加新的计算功能，而在于把已有分析能力组织得更稳定、更可复用。具体而言，它提供了以下几项核心能力：
 
-- 它使用统一 DSL 描述模块块、步骤块、原始命令块和命令块，使脚本既能表达结构化流程，也能容纳少量例外操作。
+- 它使用统一 DSL 描述模块块、步骤块、原始命令块、文本提取块和命令块，使脚本既能表达结构化流程，也能容纳少量例外操作。
 - 它允许通过 `.conf` 模块配置文件把常用 Multiwfn 菜单路径封装为步骤，从而将经验性操作沉淀为可共享模板。
 - 它支持 `%preraw` / `%raw` 原始命令块，因此即便某个流程尚未被模块化，或者某些初始化设置必须在模块开头就修改，也可以直接在脚本中写入原始 Multiwfn 输入序列。
-- 它支持 `%command` 后处理块，可以把重命名、移动文件、调用 Python / VMD / gnuplot 等操作紧接在计算结果之后执行。
+- 它支持结构化 `%grep` 文本提取块，并支持 `%command` 后处理块，可以在计算结束后先验证/导出文本结果，再执行重命名、移动文件或外部工具调用。
 - 它支持 `collect(dir);` 产物收集指令，可以在不手写一串 `mv` 的情况下，把前面任务新生成的文件集中移动到指定目录。
 - 它支持自定义变量、数组变量、列展开变量和交互式变量，能够把批量分析、参数扫描以及单轮内部的多值展开纳入同一工作流框架。
 - 它支持 `wfn_rebase=`，因此可以在同一脚本中显式切换后续任务使用的输入文件，而不必拆分成多个独立脚本。
@@ -42,20 +42,21 @@ BaneWfn 的价值不在于增加新的计算功能，而在于把已有分析能
 
 ## 标准执行流程
 
-理解 BaneWfn 的执行顺序，对编写稳定脚本非常重要。总体上，程序会先完成“配置解析”，再完成“任务展开”，最后进入“逐轮执行”。其标准流程如下：
+理解 BaneWfn 的执行顺序，对编写稳定脚本非常重要。总体上，程序会先解析输入并判断任务依赖，再完成变量与文件展开，最后进入逐轮执行。其标准流程如下：
 
-1. 程序首先查找并读取 `banewfn.rc`，从中确定 `Multiwfn_exec`、`confpath`、默认核心数以及可选的 `gitbash_exec`。
-2. 随后解析输入文件，读取 `wfn`、`core`、`dryrun`、`nogui` 等头部保留项，以及自定义变量和 `wfn_rebase` 指令。
-3. 输入文件中的任务块会被整理为内部任务序列，包括 module 块、独立 `%raw` / `%preraw` 块、独立 `%command` 块，以及 `collect(dir);` 收集指令。
-4. 程序会合并命令行变量与文件中的自定义变量；若存在 `var=?`、`var*=?` 或 `len(var)=?` 形式的交互式变量，则会在运行时提示用户输入。
-5. 对于脚本中实际引用到的模块，程序会先检查输入文件末尾是否包含对应的 inline conf；若存在，则优先加载内嵌配置，否则从 `confpath` 读取外部 `.conf` 文件。
-6. 程序会展开波函数文件通配符，并根据数组变量生成变量组合。由此得到的每一轮执行，都对应一个“输入文件 × 变量组合”的具体实例。
-7. 在每一轮实例中，程序会先做输入文件侧占位符替换，再根据模块配置展开出最终的 Multiwfn 命令序列。
-8. 对于需要调用 Multiwfn 的任务，程序会根据块的收尾方式选择 `end`（非交互模式）或 `wait`（交互模式）执行。
-9. 当某个任务成功结束且带有 `%command` 时，程序会继续执行该任务对应的后处理命令；如果后面存在 `collect(...)`，程序会在任务前后比较当前目录新增的普通文件，并先记入待收集列表。
-10. 执行到 `collect(dir);` 时，程序会创建目标目录，把此前记住的新增文件移动进去，并清空已成功移动的记录。
+1. 程序首先解析输入文件，读取 `wfn`、`core`、`dryrun`、`nogui` 等头部保留项，以及自定义变量、任务块和 `wfn_rebase` / `collect` 指令。
+2. 程序检查任务是否需要 Multiwfn。module、builtin、`%raw` 与 `%preraw` 需要波函数和 `banewfn.rc`；只有独立 `%grep` / `%command` 的工作流不读取 rc，也不要求波函数文件。
+3. 输入文件中的任务块会被整理为内部任务序列，包括 module、builtin、独立 `%raw` / `%preraw`、`%grep`、`%command` 与 `collect(dir);`。
+4. 程序合并命令行变量与文件中的自定义变量；若存在 `var=?`、`var*=?` 或 `len(var)=?` 形式的交互式变量，则在运行时提示用户输入。
+5. 对于实际引用到的模块，程序先检查输入文件末尾是否包含对应 inline conf；若存在则优先加载内嵌配置，否则从 `confpath` 读取外部 `.conf`。
+6. 程序展开波函数文件通配符，并根据数组变量生成变量组合。纯独立 `%grep` / `%command` 且未指定波函数时，会建立一次不带波函数的执行实例。
+7. 在每一轮实例中，程序先做输入文件侧占位符替换，再根据模块配置展开最终 Multiwfn 命令序列；`${output}` 保留到输出文件名确定后再替换。
+8. 对于需要调用 Multiwfn 的任务，程序根据 `end`（非交互模式）或 `wait`（交互模式）执行。
+9. 单个任务的后续顺序固定为：`Multiwfn → %grep → %command`；若任务不调用 Multiwfn，则为 `%grep → %command`。任一 required `%grep` 失败都会阻止后续命令。
+10. 如果后面存在 `collect(...)`，程序会在可执行任务前后比较当前目录新增的普通文件并记入待收集列表；执行到 `collect(dir);` 时创建目标目录、移动文件并清理已成功移动的记录。
 
-换句话说，BaneWfn 的核心思路是：先把脚本“解释清楚”，再把它“展开成一组具体任务”，最后按顺序逐一执行。只要理解了这三层关系，脚本中的变量替换、批处理、命令命名和 `wfn_rebase` 行为就会变得更容易预测。
+换句话说，BaneWfn 的核心思路是：先把脚本解释为明确的任务与依赖，再展开成具体执行实例，最后按顺序逐一执行。理解这三层关系后，变量替换、批处理、文本提取、命令命名和 `wfn_rebase` 行为会更容易预测。
+
 
 ## 循环展开规则
 
@@ -539,7 +540,7 @@ BaneWfn 中的变量替换，始终遵循“先输入文件，后模块模板”
 1. 先展开 `wfn=` 指定的文件列表，以及数组变量对应的变量组合；
 2. 对于每一个“输入文件 × 变量组合”实例，先替换输入文件侧的变量与占位符；
 3. 再把这些已经定值的模块参数交给 `.conf` 模板，继续做模板侧占位符替换；
-4. 对于 `%command` 中的 `${output}`，则要等到对应的 Multiwfn 任务运行结束后，才会获得最终文件名。
+4. 对于 `%grep` 与 `%command` 中的 `${output}`，则要等到对应的 Multiwfn 任务输出文件名确定后，才会进行最终替换。
 
 换句话说，输入文件侧负责回答“这一轮跑谁、用哪些项目变量”，而模块模板侧负责回答“拿到这些参数后，应当生成哪些具体命令”。把这两层分开理解之后，变量、默认值、列展开和 `${output}` 的行为都会变得更容易预测。
 
@@ -548,7 +549,7 @@ BaneWfn 中的变量替换，始终遵循“先输入文件，后模块模板”
 
 ### 模块块
 
-模块块以 `[module]` 开始，可包含参数行、`%preraw`、`%process`、`%raw` 与 `%command`。一个典型例子如下：
+模块块以 `[module]` 开始，可包含参数行、`%preraw`、`%process`、`%raw`、`%grep` 与 `%command`。一个典型例子如下：
 
 ```ini
 [fmo]
@@ -573,7 +574,8 @@ end
 3. 再按 `%process` 中的顺序执行各步骤；
 4. 然后拼接模块内 `%raw`；
 5. 若以 `end` 收尾，则自动追加 `[quit]`；
-6. 最后在 Multiwfn 成功结束后执行 `%command`。
+6. Multiwfn 成功结束后依次执行模块内 `%grep` 规则；
+7. 所有 required `%grep` 规则成功后执行 `%command`。
 
 如果 `[main]` 序列中有变量，可以在模块块开头通过 `key value` 的形式指定参数，每行一个，例如：
 
@@ -672,6 +674,165 @@ end
 如果你的工作流需要整理输出目录、批量改名、写日志、调用可视化脚本或触发额外分析，那么 `%command` 往往是把“算完之后该做什么”显式写进工作流的最好位置。
 
 
+### `%grep`
+
+`%grep` 是结构化文本提取块。它不直接复刻系统 `grep`、`sed` 或 `awk` 的命令行参数，而是把提取过程组织为：
+
+```text
+文本来源 → 范围/行选择 → 字段解析与投影 → 验证 → 输出
+```
+
+基本形式如下：
+
+```ini
+%grep
+  [optional] [规则名:] [from <source> |] <selector>
+    [| <stage> ...]
+    [-> <path> | | emit <emitter> [to <path>]]
+end
+```
+
+一条规则可以写在一行，也可以用以 `|`、`->` 或 `..` 开头的后续行续写。模块内若省略 `from`，来源默认为当前任务生成的 `${output}`；独立 `%grep` 必须使用 `from <file>` 明确指定来源。独立提取任务不会调用 Multiwfn，也不要求波函数文件或 `banewfn.rc`。
+
+例如，提取 IFCT 输出范围：
+
+```ini
+[excit]
+%process
+  ifctdata state ${state}
+  ifct state ${state} fragdef fragdef.txt
+
+%grep
+  ifct: between "Contribution of each fragment to hole and electron"
+                .. "Intrinsic local excitation percentage"
+    -> ${input}_IFCT/ifctdata${state}.txt
+
+%command
+#!/bin/bash
+mv dislin.png ${input}_IFCT/state${state}.png
+end
+```
+
+模块任务的执行顺序固定为 `Multiwfn → %grep → %command`，因此 `%command` 可以直接处理 `%grep` 已生成的文件。输出路径的父目录会自动创建；文件先写入临时文件，再替换目标文件，解析失败时不会留下半写入结果。
+
+#### 来源与选择器
+
+支持的选择器如下：
+
+| 选择器 | 行为 |
+| --- | --- |
+| `between "A" .. "B"` | 包含起始行和结束行。 |
+| `inside "A" .. "B"` | 排除起始行和结束行。 |
+| `after "A"` | 提取标识行之后的内容，不包含标识行。 |
+| `before "B"` | 提取标识行之前的内容，不包含标识行。 |
+| `match "text"` | 选择匹配的行。 |
+
+普通字符串匹配会归一化横向空白，因此 `"Center Charge"` 可以匹配 `Center       Charge`，但输出仍保留原始行。需要按原始字符匹配时使用 `exact "..."`；正则表达式写作 `/.../`，忽略大小写写作 `/.../i`。
+
+重复范围或重复标识可使用 occurrence 修饰符：
+
+```ini
+between "A" .. "B" first
+between "A" .. "B" last
+between "A" .. "B" nth 3
+between "A" .. "B" all
+```
+
+`between`、`inside`、`after`、`before` 默认使用 `first`；`match` 默认使用 `all`。`all` 的范围提取按非重叠标识对依次拼接。
+
+#### 管线 stage
+
+当前版本支持以下通用 stage：
+
+| Stage | 说明 |
+| --- | --- |
+| `trim` | 去除每条文本行首尾空白。 |
+| `drop blank` | 删除空行。 |
+| `skip N` | 跳过前 N 行或记录。 |
+| `take N` | 保留前 N 行或记录。 |
+| `tail N` | 保留后 N 行或记录。 |
+| `reject <pattern>` | 删除匹配的文本行。 |
+| `scan "format"` | 按字段格式捕获并类型化记录。 |
+| `scan strict "format"` | 任一非空行无法解析时失败。 |
+| `split ws` | 按普通空白拆分为列。 |
+| `split ","` | 按给定字符串分隔符拆分。 |
+| `cols ...` | 选择或重命名字段；直接作用于文本时自动先执行 `split ws`。 |
+| `expect rows N` | 验证行数；也支持 `== != < <= > >=`。 |
+| `expect unique <field>` | 验证字段唯一。 |
+| `expect contiguous <field>` | 验证正整数索引从 1 连续且不重复。 |
+| `expect finite <field>` | 验证字段为有限数值。 |
+
+`scan` 字段写作 `{name:type}`。字段名允许字母、数字、下划线、点号和连字符，常用类型如下：
+
+| 类型 | 含义 |
+| --- | --- |
+| `int` | 整数。 |
+| `num` | 浮点数，支持 `E` / `D` 指数。 |
+| `word` | 不含空白的词。 |
+| `str` | 普通字符串字段。 |
+| `rest` | 当前行剩余内容。 |
+
+例如解析 RESP2 电荷：
+
+```ini
+%grep
+  resp2: from resp.out | inside "Center Charge" .. "Sum of charges" last
+    | scan "{atom:int}({element:word}) {charge.resp2:num}"
+    | expect rows 12
+    | emit atomvec
+end
+```
+
+实际 Multiwfn 输出可能同时包含 RESP 与 RESP2 两段 `Center Charge` 表；此时应使用 `last` 选择后一段。标识符按实际输出书写，例如某些版本输出 `Sum of charges` 而不是 `Sum of charges:`。
+
+`cols` 使用一基列号，负数从末列开始：
+
+```ini
+%grep
+  conformers: from search.out | match "Conformer:"
+    | cols conformer=2 rmse=4 rrmse=6
+    -> conformers.tsv
+end
+```
+
+#### 输出
+
+普通输出使用 `-> <path>`。原始文本按原行写入；结构化记录根据扩展名序列化：`.csv` 为 CSV，`.jsonl` 为每行一个 JSON 对象，`.txt` / `.tsv` 为制表符分隔。单字段记录自然输出为每行一个值。
+
+`emit atomvec` 用于逐原子属性。它自动识别 `atom` / `index` / `center` 为原子序号，`element` / `symbol` 为元素，并把唯一的非保留数值字段名作为属性名。若字段名为 `value`，需要显式指定属性名：
+
+```ini
+inside "Center Charge" .. "Sum of charges" last
+| scan "{atom:int}({element:word}) {value:num}"
+| emit atomvec charge.resp2 to RESP2.atomvec.kv
+```
+
+未指定路径时，默认文件名为 `<property>.atomvec.kv`。输出前会验证原子序号为正整数、唯一且从 1 连续，并验证属性值为有限数值。
+
+`emit kv` 用于单条结构化记录：
+
+```ini
+%grep
+  excitation: from hole-ele.out | match "Excitation energy of this state"
+    | scan "Excitation energy of this state: {excitation.energy:num} eV"
+    | emit kv
+end
+```
+
+规则名为 `excitation` 且未指定路径时，默认生成 `excitation.kv`。
+
+普通规则默认是 required：来源必须可读、标识必须找到、结果必须非空、`scan` 至少解析一条记录、输出必须成功。允许结果不存在时，在规则前加 `optional`：
+
+```ini
+%grep
+  optional note: from analysis.out | match "Optional analysis result"
+    -> optional-note.txt
+end
+```
+
+未匹配时只给出 warning，并且不创建空文件。`wait` 或 `--screen` 模式通常没有当前 `.out` 文件；这时使用默认来源的规则会失败，应改用显式 `from <file>`，或改为产生输出文件的非交互模式。
+
+
 ### `collect(dir);`
 
 `collect(dir);` 是一个块外的产物收集指令，用来把前面若干任务新生成的文件统一移动到目录 `dir`。它不是 `%command` 块，也不会调用 Multiwfn；推荐写在两个已经用 `end` / `wait` 结束的任务块之间，或写在某个模块块的 `end` / `wait` 之后作为收集点。
@@ -722,12 +883,14 @@ collect(NTOs);
 
 - 对于 module 块，`end` 表示按非交互模式执行 Multiwfn，并在成功后执行 `%command`；
 - 对于独立 `%raw` 或独立 `%preraw`，`end` 表示按非交互模式执行原始 Multiwfn 序列；
+- 对于独立 `%grep`，`end` 表示提取任务结束；
 - 对于独立 `%command`，`end` 表示命令块结束。
 
 #### `wait`
 
 - 对于 module 块，`wait` 表示进入交互模式；程序会先喂入预设命令，再把 Multiwfn 会话交还给用户；
 - 对于独立 `%raw` 或独立 `%preraw`，`wait` 表示把对应原始块内容作为交互模式的预输入；
+- 对于独立 `%grep`，`wait` 与 `end` 行为一致；
 - 对于独立 `%command`，`wait` 与 `end` 行为一致。
 
 如果你希望脚本先帮你走完一部分固定菜单，再由你手动接管剩余操作，那么 `wait` 是最自然的选择；如果你希望整段流程完全无人值守地执行，则应使用 `end`。
@@ -760,7 +923,8 @@ wfn_rebase=
 1. 生成临时 Multiwfn 命令文件；
 2. 通过重定向方式调用 Multiwfn；
 3. 默认把标准输出追加到 `.out` 文件；
-4. 若 Multiwfn 成功结束，再执行对应的 `%command`。
+4. 若 Multiwfn 成功结束，依次执行对应的 `%grep`；
+5. required `%grep` 全部成功后，再执行 `%command`。
 
 从自动化角度看，文件模式最适合用于批量处理、无人值守计算和需要保留完整日志的场景，因为它会把中间命令和输出文件命名为可追踪的产物。
 
@@ -771,7 +935,8 @@ wfn_rebase=
 1. 通过管道向 Multiwfn 发送预设输入；
 2. 保留会话，让用户继续手动交互；
 3. 不生成 `.out` 文件；
-4. 若存在 `%command`，则在 Multiwfn 成功结束后再执行。
+4. 若存在 `%grep`，仅显式 `from <file>` 的规则可以正常读取来源；
+5. 若前序步骤成功，再执行 `%command`。
 
 交互模式最常用于绘图时需要手动调整，但前置命令极度繁琐，敲错一次白干很久的场景。善用`wait`，可以将繁琐重复的步骤全部省略，直接进入绘图细调阶段。
 
@@ -799,6 +964,15 @@ wfn_rebase=
 | Windows | 上述相应 `.bat`；若启用 Git Bash，则依然生成 `.sh` |
 
 如果用户在调试 `%command` 时发现命令块没有按预期工作，最直接的办法通常是使用 `--dryrun` 查看替换后的命令内容，而不是试图在执行后寻找临时脚本残留。
+
+## `%grep` 的执行与产物规则
+
+模块内 `%grep` 在 Multiwfn 返回成功之后、`%command` 之前运行。任一 required 规则失败时，后续 `%grep` 规则与 `%command` 都不会执行；`optional` 规则未匹配只产生 warning。独立 `%grep` 直接执行 `from <file>` 提取，不调用 Multiwfn，也不要求波函数文件或 `banewfn.rc`。
+
+普通模块中省略 `from` 时，来源是该任务的 `.out` 文件。`wait` 与 `--screen` 通常不生成 `.out`，因此默认来源不可用；这类任务应使用显式 `from <file>`，或者改为文件模式。`${output}` 会在运行时替换为当前任务的 `.out` 路径，独立任务中若没有当前输出则为空。
+
+`%grep` 输出路径完全由规则或 emitter 决定。程序会自动创建父目录，先写入同目录临时文件，再替换目标文件。提取、解析、验证或写入失败时，不会把半写入文件当作成功结果。在 `--dryrun` 下只打印每条规则将读取的来源和将写入的目标，不实际读取或生成文件。
+
 
 ## `%command` 的平台执行规则
 
@@ -829,16 +1003,16 @@ collect(${input}_NTO${state});
 
 下面这些规则虽然不复杂，但在脚本调试时经常会遇到：
 
-- `%raw` 与 `%command` 中的 `#` 行是字面内容，不是输入文件注释；
+- `%raw` 与 `%command` 中的 `#` 行是字面内容；`%grep` 中 `#` 在引号或 `/regex/` 外表示注释；
 - 自定义变量与命令行 `-v` 要求使用 `key=value` 且 `value` 非空；
 - 命令行 `-w` 与第二个位置参数优先于输入文件头 `wfn=`；仅在命令行未提供时，才回退到文件内 `wfn=`；
-- `%command` 只有在前置 Multiwfn 块返回成功时才会自动执行，独立 `%command` 块除外；
-- `wait` 模式与 `--screen` 模式通常不会生成 `.out` 文件，因此 `${output}` 为空；
+- 模块内 `%command` 只有在前置 Multiwfn 与 required `%grep` 全部成功时才会执行，独立 `%command` 块除外；
+- `wait` 模式与 `--screen` 模式通常不会生成 `.out` 文件，因此 `${output}` 为空，默认来源的 `%grep` 也不可用；
 - `wfn_rebase` 目标文件缺失只会产生警告，不会阻止后续任务继续提交给 Multiwfn；
-- `collect(...)` 只收集任务运行后新出现的当前目录普通文件，不递归收集子目录；
+- `collect(...)` 会看到 `%grep` 在当前目录中新建的普通文件，但仍不递归收集输出子目录；
 - 通配符展开只处理普通文件，不处理目录。
 
-如果你希望脚本行为可预测、可交付，那么最稳妥的策略永远是：把核心流程写成模块，把例外写进 `%raw`，把结果整理写进 `%command`，同时通过 `--dryrun` 验证生成的命令文件和变量替换结果。
+如果你希望脚本行为可预测、可交付，那么稳妥的策略是：把核心计算写成模块，把例外输入写进 `%raw`，把文本结果提取写进 `%grep`，把最终文件操作写进 `%command`，并通过 `--dryrun` 检查来源、目标、命令文件和变量替换结果。
 
 # inline conf 与单文件打包
 
@@ -894,6 +1068,7 @@ Note：
 ```text
 banewfn <input.inp> <molecule.fchk> [options]
 banewfn -w <molecule.fchk> <input.inp> [options]
+banewfn <input.inp> [options]  # 独立 %grep / %command
 ```
 
 ### 主要选项
@@ -912,7 +1087,7 @@ banewfn -w <molecule.fchk> <input.inp> [options]
 
 ### 波函数文件来源规则
 
-命令行 `-w/--wfn` 将覆盖输入文件头部`wfn=`。若均不存在，在启动后向用户交互式询问。
+命令行 `-w/--wfn` 将覆盖输入文件头部 `wfn=`。若工作流包含 module、builtin、`%raw` 或 `%preraw`，且两处均未提供波函数文件，程序会在启动后交互式询问。只有独立 `%grep` / `%command` 的工作流不需要波函数文件，也不会询问。
 
 ### 核心数来源规则
 
@@ -922,7 +1097,7 @@ banewfn -w <molecule.fchk> <input.inp> [options]
 2. 输入文件头部 `core=`
 3. `banewfn.rc` 中的 `cores`
 
-对于需要临时提高并行度的场景，直接使用 `-c` 即可，无需改动脚本本身。
+独立 `%grep` / `%command` 不读取 `banewfn.rc`；未指定核心数时内部使用 1。对于需要临时提高 Multiwfn 并行度的场景，直接使用 `-c` 即可，无需改动脚本本身。
 
 ### 变量来源规则
 

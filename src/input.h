@@ -1,5 +1,6 @@
 #ifndef INPUT_H
 #define INPUT_H
+#include "grep_dsl.h"
 #include <string>
 #include <map>
 #include <tuple>
@@ -20,6 +21,8 @@ struct ModuleTask {
     std::vector<std::pair<std::string, std::map<std::string, std::string>>> postProcessSteps;
     std::vector<std::string> preRawCommands;  // Commands from %preraw block (inserted before [main])
     std::vector<std::string> rawCommands;  // Commands from %raw block (literal Multiwfn input sequence)
+    std::vector<GrepRule> grepRules;  // Structured text-extraction rules from %grep blocks
+    std::vector<std::string> grepErrors;  // Deferred syntax errors reported by the %grep parser
     std::vector<std::string> commands;  // Commands from %command block
     bool useWait = false;  // Whether to use wait mode (interactive mode)
     std::string wfnFile;  // Reserved: optional per-task wavefunction file (currently unused)

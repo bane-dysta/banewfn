@@ -2,6 +2,7 @@ add_executable(banewfn_tests
     test_main.cpp
     test_utils.cpp
     test_config.cpp
+    test_grep.cpp
     test_input.cpp
     test_inline_conf.cpp
     $<TARGET_OBJECTS:banewfn_core>

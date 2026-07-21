@@ -464,6 +464,33 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
             expandedRawCommands.insert(expandedRawCommands.end(), expandedLines.begin(), expandedLines.end());
         }
         task.rawCommands.swap(expandedRawCommands);
+
+        // Apply replacement to the structured %grep AST. ${output} is not an
+        // input/custom variable, so it intentionally remains unresolved here
+        // and is replaced by the executor after the Multiwfn output filename is
+        // known.
+        for (auto& rule : task.grepRules) {
+            rule.name = replaceInputPlaceholders(rule.name, wfnFile, customVars);
+            rule.source = replaceInputPlaceholders(rule.source, wfnFile, customVars);
+            rule.selector.first.value = replaceInputPlaceholders(
+                rule.selector.first.value, wfnFile, customVars);
+            rule.selector.second.value = replaceInputPlaceholders(
+                rule.selector.second.value, wfnFile, customVars);
+            for (auto& stage : rule.stages) {
+                stage.pattern.value = replaceInputPlaceholders(
+                    stage.pattern.value, wfnFile, customVars);
+                stage.argument = replaceInputPlaceholders(stage.argument, wfnFile, customVars);
+                for (auto& column : stage.columns) {
+                    column.outputName = replaceInputPlaceholders(
+                        column.outputName, wfnFile, customVars);
+                    column.sourceName = replaceInputPlaceholders(
+                        column.sourceName, wfnFile, customVars);
+                }
+            }
+            rule.sink.path = replaceInputPlaceholders(rule.sink.path, wfnFile, customVars);
+            rule.sink.property = replaceInputPlaceholders(
+                rule.sink.property, wfnFile, customVars);
+        }
         
         // Apply replacement to commands
         for (auto& command : task.commands) {
@@ -607,13 +634,18 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
     bool inCommandMode = false;
     bool inRawMode = false;
     bool inPreRawMode = false;
+    bool inGrepMode = false;
     bool inBuiltinMode = false;
+    std::vector<GrepDslLine> grepBlockLines;
+    int grepBlockStartLine = 0;
+    int inputLineNumber = 0;
     std::map<std::string, int> moduleBlockCounters;  // Track block indices for each module name
     int anonymousBlockCounter = 0;
 
     auto ensureAnonymousTask = [&]() {
         if (currentTask.moduleName.empty() && currentTask.commands.empty() &&
-            currentTask.preRawCommands.empty() && currentTask.rawCommands.empty()) {
+            currentTask.preRawCommands.empty() && currentTask.rawCommands.empty() &&
+            currentTask.grepRules.empty() && currentTask.grepErrors.empty()) {
             currentTask = ModuleTask();
             currentTask.useWait = false;
             currentTask.blockIndex = anonymousBlockCounter++;
@@ -622,13 +654,60 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
 
     auto hasPendingTask = [&]() {
         return currentTask.isBuiltin() || !currentTask.moduleName.empty() || !currentTask.commands.empty() ||
-               !currentTask.preRawCommands.empty() || !currentTask.rawCommands.empty();
+               !currentTask.preRawCommands.empty() || !currentTask.rawCommands.empty() ||
+               !currentTask.grepRules.empty() || !currentTask.grepErrors.empty();
+    };
+
+    auto flushGrepBlock = [&]() {
+        if (grepBlockStartLine <= 0) {
+            return;
+        }
+
+        GrepParseResult grepResult = GrepDsl::parseBlock(grepBlockLines);
+        if (grepResult.rules.empty() && grepResult.errors.empty()) {
+            grepResult.errors.push_back("line " + std::to_string(grepBlockStartLine) +
+                                        ": %grep block contains no rules");
+        }
+        currentTask.grepRules.insert(currentTask.grepRules.end(),
+                                     grepResult.rules.begin(), grepResult.rules.end());
+        currentTask.grepErrors.insert(currentTask.grepErrors.end(),
+                                      grepResult.errors.begin(), grepResult.errors.end());
+        grepBlockLines.clear();
+        grepBlockStartLine = 0;
     };
     
     while (std::getline(file, line)) {
+        ++inputLineNumber;
         // 保留前导空白用于模块行"顶格"判断
         std::string noComment = Utils::removeInlineComment(line);
         std::string trimmed = Utils::trim(noComment);
+
+        // %grep is line-oriented but uses its own tokenizer/comment rules so
+        // that # inside /regular expressions/ remains literal. A new block
+        // directive, end/wait, module header, or builtin block naturally
+        // terminates the current %grep block and is then processed normally.
+        if (inGrepMode) {
+            const std::string grepNoComment = GrepDsl::removeInlineComment(line);
+            const std::string grepTrimmed = Utils::trim(grepNoComment);
+            bool moduleHeader = false;
+            if (!grepNoComment.empty() && grepNoComment[0] == '[') {
+                const size_t lastNonWS = grepNoComment.find_last_not_of(" \t\r\n");
+                moduleHeader = lastNonWS != std::string::npos && grepNoComment[lastNonWS] == ']';
+            }
+            std::string builtinName;
+            std::string builtinId;
+            const bool builtinStart = tryParseBuiltinStart(grepTrimmed, builtinName, builtinId);
+            const bool grepTerminator = grepTrimmed == "%grep" || grepTrimmed == "%command" ||
+                                        grepTrimmed == "%preraw" || grepTrimmed == "%raw" ||
+                                        grepTrimmed == "%process" || grepTrimmed == "end" ||
+                                        grepTrimmed == "wait" || moduleHeader || builtinStart;
+            if (!grepTerminator) {
+                grepBlockLines.push_back({inputLineNumber, line});
+                continue;
+            }
+            flushGrepBlock();
+            inGrepMode = false;
+        }
 
         // In command mode, check for special keywords first (before storing raw line)
         // Special keywords still need to be detected even in command mode
@@ -653,6 +732,21 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             continue;
         }
 
+        // Enter structured text-extraction mode. It is valid both inside a
+        // module task and as an anonymous standalone task with from <file>.
+        if (trimmed == "%grep") {
+            isSpecialKeyword = true;
+            ensureAnonymousTask();
+            inGrepMode = true;
+            grepBlockStartLine = inputLineNumber;
+            grepBlockLines.clear();
+            inCommandMode = false;
+            inProcessMode = false;
+            inPreRawMode = false;
+            inRawMode = false;
+            continue;
+        }
+
         // Enter command mode
         if (trimmed == "%command") {
             isSpecialKeyword = true;
@@ -662,6 +756,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             inProcessMode = false;
             inPreRawMode = false;
             inRawMode = false;
+            inGrepMode = false;
             continue;
         }
 
@@ -674,6 +769,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             inCommandMode = false;
             inProcessMode = false;
             inRawMode = false;
+            inGrepMode = false;
             continue;
         }
 
@@ -686,6 +782,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             inCommandMode = false;
             inPreRawMode = false;
             inProcessMode = false;
+            inGrepMode = false;
             continue;
         }
         
@@ -700,6 +797,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             inCommandMode = false;
             inPreRawMode = false;
             inRawMode = false;
+            inGrepMode = false;
             continue;
         }
         
@@ -717,6 +815,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             inCommandMode = false;
             inPreRawMode = false;
             inRawMode = false;
+            inGrepMode = false;
             continue;
         }
 
@@ -733,6 +832,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             inCommandMode = false;
             inPreRawMode = false;
             inRawMode = false;
+            inGrepMode = false;
             continue;
         }
         
@@ -758,7 +858,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
         // Special directive: collect(path);
         // Only recognized between completed blocks. Inside %process/%raw/%command
         // it remains ordinary block content, so existing block syntax stays explicit.
-        if (!hasPendingTask() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
+        if (!hasPendingTask() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode && !inGrepMode) {
             std::string collectDir;
             if (tryParseCollectDirective(trimmed, collectDir)) {
                 ModuleTask collectTask;
@@ -792,13 +892,13 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
         }
 
         // Check for dryrun=on/true format at the beginning of file
-        if (trimmed.find("dryrun=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
+        if (trimmed.find("dryrun=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode && !inGrepMode) {
             tryParseInputBoolFlag(trimmed.substr(7), "dryrun", dryrun);
             continue;
         }
 
         // Check for nogui=on/true format at the beginning of file
-        if (trimmed.find("nogui=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
+        if (trimmed.find("nogui=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode && !inGrepMode) {
             tryParseInputBoolFlag(trimmed.substr(6), "nogui", nogui);
             continue;
         }
@@ -806,7 +906,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
         // Special directive: wfn_rebase=xxx
         // It can appear between blocks to switch the file provided to subsequent Multiwfn tasks.
         // Only recognized when not inside any module/%process/%command.
-        if (trimmed.find("wfn_rebase=") == 0 && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
+        if (trimmed.find("wfn_rebase=") == 0 && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode && !inGrepMode) {
             ModuleTask rebaseTask;
             rebaseTask.kind = TaskKind::WfnRebase;
             rebaseTask.wfnRebaseFile = Utils::trim(trimmed.substr(std::string("wfn_rebase=").size()));
@@ -816,7 +916,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
         
         // Check for key=value format at the beginning of file (custom variables)
         // This should come before module definitions, so check if no module is active
-        if (currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
+        if (currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode && !inGrepMode) {
             size_t eqPos = trimmed.find('=');
             // Only treat as variable if:
             // 1. Contains exactly one '='
@@ -845,7 +945,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
         
         // Built-in high-level DSL block start, e.g.
         // bane.cube.make density { ... }
-        if (!inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode) {
+        if (!inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode && !inGrepMode) {
             std::string builtinName;
             std::string builtinId;
             if (tryParseBuiltinStart(trimmed, builtinName, builtinId)) {
@@ -862,6 +962,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
                 inCommandMode = false;
                 inPreRawMode = false;
                 inRawMode = false;
+                inGrepMode = false;
                 continue;
             }
         }
@@ -883,6 +984,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
                 inCommandMode = false;
                 inPreRawMode = false;
                 inRawMode = false;
+                inGrepMode = false;
                 continue;
             }
         }
@@ -928,7 +1030,9 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
         }
     }
     
-    // Save the last task (module or command-only)
+    flushGrepBlock();
+
+    // Save the last task (module, grep-only, or command-only)
     if (hasPendingTask()) {
         tasks.push_back(currentTask);
     }

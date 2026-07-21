@@ -13,6 +13,7 @@
 ```text
 banewfn <input.inp> <molecule.fchk> [options]
 banewfn -w <molecule.fchk> <input.inp> [options]
+banewfn <input.inp> [options]  # 独立 %grep / %command
 ```
 
 ### 主要选项
@@ -31,7 +32,7 @@ banewfn -w <molecule.fchk> <input.inp> [options]
 
 ### 波函数文件来源规则
 
-命令行 `-w/--wfn` 将覆盖输入文件头部`wfn=`。若均不存在，在启动后向用户交互式询问。
+命令行 `-w/--wfn` 将覆盖输入文件头部 `wfn=`。若工作流包含 module、builtin、`%raw` 或 `%preraw`，且两处均未提供波函数文件，程序会在启动后交互式询问。只有独立 `%grep` / `%command` 的工作流不需要波函数文件，也不会询问。
 
 ### 核心数来源规则
 
@@ -41,7 +42,7 @@ banewfn -w <molecule.fchk> <input.inp> [options]
 2. 输入文件头部 `core=`
 3. `banewfn.rc` 中的 `cores`
 
-对于需要临时提高并行度的场景，直接使用 `-c` 即可，无需改动脚本本身。
+独立 `%grep` / `%command` 不读取 `banewfn.rc`；未指定核心数时内部使用 1。对于需要临时提高 Multiwfn 并行度的场景，直接使用 `-c` 即可，无需改动脚本本身。
 
 ### 变量来源规则
 

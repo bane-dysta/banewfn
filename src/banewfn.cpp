@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include "config.h"
+#include "grep_engine.h"
 #include "input.h"
 #include "inline_conf.h"
 #include "ui.h"
@@ -188,6 +189,15 @@ static bool taskHasMultiwfnScript(const ModuleTask& task) {
     return !task.moduleName.empty() || !task.preRawCommands.empty() || !task.rawCommands.empty();
 }
 
+static bool tasksRequireWavefunction(const std::vector<ModuleTask>& tasks) {
+    for (const auto& task : tasks) {
+        if (task.isBuiltin() || taskHasMultiwfnScript(task)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static std::string getTaskDisplayName(const ModuleTask& task) {
     if (task.isBuiltin()) {
         std::string name = "bane." + task.builtinName;
@@ -205,10 +215,27 @@ static std::string getTaskDisplayName(const ModuleTask& task) {
     if (!task.rawCommands.empty()) {
         return "%raw";
     }
+    if (!task.grepRules.empty() || !task.grepErrors.empty()) {
+        return "%grep";
+    }
     if (!task.commands.empty()) {
         return "%command";
     }
     return "<empty>";
+}
+
+static bool reportGrepSyntaxErrors(const std::vector<ModuleTask>& tasks) {
+    bool found = false;
+    for (const auto& task : tasks) {
+        for (const auto& error : task.grepErrors) {
+            if (!found) {
+                std::cerr << "Error: invalid %grep syntax" << std::endl;
+            }
+            found = true;
+            std::cerr << "  [" << getTaskDisplayName(task) << "] " << error << std::endl;
+        }
+    }
+    return found;
 }
 
 static std::string getMultiwfnFileStem(const ModuleTask& task, const std::string& wfnFile) {
@@ -1410,6 +1437,25 @@ private:
             return false;
         }
     }
+
+    bool executeGrepBlock(const ModuleTask& task, const std::string& outFile,
+                          const ExecutionOptions& options) {
+        if (!task.grepErrors.empty()) {
+            for (const auto& error : task.grepErrors) {
+                std::cerr << "Error: %grep syntax error: " << error << std::endl;
+            }
+            return false;
+        }
+        if (task.grepRules.empty()) {
+            return true;
+        }
+
+        GrepExecutionContext context;
+        context.defaultSource = outFile;
+        context.outputFile = outFile;
+        context.dryrun = options.dryrun;
+        return GrepEngine::execute(task.grepRules, context).success;
+    }
     
     bool buildBuiltinExecutionPlan(const ModuleTask& task,
                                    const std::map<std::string, std::string>& artifacts,
@@ -1713,9 +1759,18 @@ private:
                           int cores, const ExecutionOptions& options) {
         bool success = false;
 
-        // Support command-only task (no Multiwfn task, only %command block)
+        if (!task.grepErrors.empty()) {
+            return executeGrepBlock(task, /*outFile=*/"", options);
+        }
+
+        // Support standalone %grep and command-only tasks. The execution order
+        // remains grep -> command when there is no Multiwfn script.
         if (!taskHasMultiwfnScript(task)) {
-            return executeCommandBlock(task, wfnFile, options, /*outFile=*/"");
+            success = executeGrepBlock(task, /*outFile=*/"", options);
+            if (success) {
+                success = executeCommandBlock(task, wfnFile, options, /*outFile=*/"");
+            }
+            return success;
         }
 
         // Compute outFile centrally so that ${output} in %command blocks is
@@ -1735,7 +1790,10 @@ private:
             success = executeModuleTaskFile(task, wfnFile, cores, options);
         }
         
-        // Execute command block if module execution was successful
+        // Fixed task order: Multiwfn -> %grep -> %command.
+        if (success) {
+            success = executeGrepBlock(task, outFile, options);
+        }
         if (success) {
             success = executeCommandBlock(task, wfnFile, options, outFile);
         }
@@ -1748,12 +1806,28 @@ public:
     // by main; this class only expands and runs the resulting task plan.
     bool executeAllTasks(const std::vector<ModuleTask>& tasks, const std::string& inpFile,
                         const std::string& wfnPattern, int cores, const ExecutionOptions& options) {
-        // 展开通配符
-        std::vector<std::string> wfnFiles = Utils::expandWildcard(wfnPattern);
-        
-        if (wfnFiles.empty()) {
-            std::cerr << "Error: No matching wavefunction files found for pattern: " << wfnPattern << std::endl;
+        if (reportGrepSyntaxErrors(tasks)) {
             return false;
+        }
+
+        const bool requiresWavefunction = tasksRequireWavefunction(tasks);
+        std::vector<std::string> wfnFiles;
+        if (wfnPattern.empty()) {
+            if (requiresWavefunction) {
+                std::cerr << "Error: This workflow contains Multiwfn tasks but no wavefunction file was specified"
+                          << std::endl;
+                return false;
+            }
+            // Standalone %grep/%command workflows deliberately execute once
+            // with an empty wavefunction context.
+            wfnFiles.push_back("");
+        } else {
+            // 展开通配符
+            wfnFiles = Utils::expandWildcard(wfnPattern);
+            if (wfnFiles.empty()) {
+                std::cerr << "Error: No matching wavefunction files found for pattern: " << wfnPattern << std::endl;
+                return false;
+            }
         }
         
         if (wfnFiles.size() > 1) {
@@ -1787,7 +1861,7 @@ public:
         const size_t combinationCount = variableCombinations.size();
         
         if (tasks.empty()) {
-            std::cerr << "Error: No modules found in inp file" << std::endl;
+            std::cerr << "Error: No executable tasks found in inp file" << std::endl;
             return false;
         }
         
@@ -1799,11 +1873,15 @@ public:
             }
         }
         
-        std::cout << "\nRequired modules: ";
-        for (const auto& mod : modules) {
-            std::cout << mod << " ";
+        if (modules.empty()) {
+            std::cout << "\nStandalone workflow: no module configuration required.\n";
+        } else {
+            std::cout << "\nRequired modules: ";
+            for (const auto& mod : modules) {
+                std::cout << mod << " ";
+            }
+            std::cout << "\n";
         }
-        std::cout << "\n";
         
         if (options.dryrun) {
             std::cout << "\n** DRY-RUN MODE: Only generating command files **\n" << std::endl;
@@ -1972,6 +2050,7 @@ void printUsage(const char* progName) {
     std::cout << "Hmm... You need some advice? No problem, Bane will help you! :)\n";
     std::cout << "Usage: " << progName << " <input.inp> <molecule.fchk> [options]\n";
     std::cout << "       " << progName << " -w <molecule.fchk> <input.inp> [options]\n";
+    std::cout << "       " << progName << " <input.inp> [options]  # standalone %grep/%command\n";
     std::cout << "\nOptions:\n";
     std::cout << "  -l, --list          List available module conf names or show a conf summary\n";
     std::cout << "  -c, --cores <num>   Specify the number of CPU cores to use\n";
@@ -1989,6 +2068,7 @@ void printUsage(const char* progName) {
     std::cout << "  %command ... end    Run shell/batch post-commands\n";
     std::cout << "  %preraw ... end/wait Send literal Multiwfn commands before [main]\n";
     std::cout << "  %raw ... end/wait   Send literal Multiwfn commands\n";
+    std::cout << "  %grep ... end       Extract text/records from the current output or from <file>\n";
     std::cout << "  collect(dir);       Move files newly created by preceding blocks into dir\n";
     std::cout << "  bane.cube.make id { ... }     Generate cube data via Multiwfn main function 5\n";
     std::cout << "  bane.line.profile id { ... }  Preload an interactive 1D line profile via main function 3\n";
@@ -2198,12 +2278,16 @@ int main(int argc, char* argv[]) {
     if (!parsedInput.loaded) {
         return 1;
     }
+    if (reportGrepSyntaxErrors(parsedInput.tasks)) {
+        return 1;
+    }
 
     const std::string& inputWfnFile = parsedInput.wfnFile;
     int inputCores = parsedInput.cores;
     const auto& inputVars = parsedInput.customVars;
     bool inputDryrun = parsedInput.dryrun;
     bool inputNogui = parsedInput.nogui;
+    const bool requiresWavefunction = tasksRequireWavefunction(parsedInput.tasks);
 
     if (inputDryrun) {
         options.dryrun = true;
@@ -2232,8 +2316,10 @@ int main(int argc, char* argv[]) {
     } else if (positionalArgs.size() >= 2) {
         wfnFile = positionalArgs[1];
     } else if (inputWfnFile.empty()) {
-        // Only request wfn file if not defined in input file
-        wfnFile = UI::requestWavefunctionFile();
+        // Standalone %grep/%command workflows do not need a wavefunction file.
+        if (requiresWavefunction) {
+            wfnFile = UI::requestWavefunctionFile();
+        }
     } else {
         // Use wfn file from input file
         wfnFile = inputWfnFile;
@@ -2242,23 +2328,23 @@ int main(int argc, char* argv[]) {
     
     WorkflowRunner runner;
     
-    // Search for banewfn.rc
-    std::string configFile = findConfigFile(argv[0]);
-    
-    if (configFile.empty()) {
-        std::cerr << "Error: Could not find banewfn.rc in any of the search locations" << std::endl;
-        std::cerr << "Please create the config file in one of the following locations:" << std::endl;
-        std::cerr << "  - Current directory: ./banewfn.rc" << std::endl;
-        std::cerr << "  - Executable directory: <exe_dir>/banewfn.rc" << std::endl;
-        std::cerr << "  - Home directory: ~/.bane/wfn/banewfn.rc" << std::endl;
-        pauseIfWindowsDryRun(shouldPauseOnExit);
-        return 1;
-    }
-    
-    // Load banewfn.rc
-    if (!runner.loadBaneWfnConfig(configFile)) {
-        pauseIfWindowsDryRun(shouldPauseOnExit);
-        return 1;
+    // Multiwfn/module workflows need banewfn.rc. Standalone %grep/%command
+    // workflows are intentionally self-contained and can run without it.
+    if (requiresWavefunction) {
+        std::string configFile = findConfigFile(argv[0]);
+        if (configFile.empty()) {
+            std::cerr << "Error: Could not find banewfn.rc in any of the search locations" << std::endl;
+            std::cerr << "Please create the config file in one of the following locations:" << std::endl;
+            std::cerr << "  - Current directory: ./banewfn.rc" << std::endl;
+            std::cerr << "  - Executable directory: <exe_dir>/banewfn.rc" << std::endl;
+            std::cerr << "  - Home directory: ~/.bane/wfn/banewfn.rc" << std::endl;
+            pauseIfWindowsDryRun(shouldPauseOnExit);
+            return 1;
+        }
+        if (!runner.loadBaneWfnConfig(configFile)) {
+            pauseIfWindowsDryRun(shouldPauseOnExit);
+            return 1;
+        }
     }
     
     // If cores not specified, use input file setting or default value from banewfn.rc
@@ -2266,8 +2352,10 @@ int main(int argc, char* argv[]) {
         if (inputCores > 0) {
             cores = inputCores;
             std::cout << "Using core count from input file: " << cores << std::endl;
-        } else {
+        } else if (requiresWavefunction) {
             cores = runner.getCores();
+        } else {
+            cores = 1;
         }
     }
     

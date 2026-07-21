@@ -7,7 +7,7 @@
 #endif
 
 #define MyAppName "Banewfn"
-#define MyAppVersion "1.3.1"
+#define MyAppVersion "1.4.0"
 #define MyAppPublisher "Bane Dysta"
 #define MyAppURL "https://github.com/bane-dysta/banewfn"
 #define MyAppExeName "banewfn.exe"

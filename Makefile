@@ -33,7 +33,7 @@ TARGET_WINDOWS_BANE = $(BUILD_WINDOWS_DIR)/banewfn.exe
 TARGET_WINDOWS_PACK = $(BUILD_WINDOWS_DIR)/bwpack.exe
 
 # Sources (shared + per-binary)
-COMMON_SOURCES = src/config.cpp src/input.cpp src/utils.cpp src/inline_conf.cpp
+COMMON_SOURCES = src/config.cpp src/grep_dsl.cpp src/grep_engine.cpp src/input.cpp src/utils.cpp src/inline_conf.cpp
 BANE_SOURCES   = src/banewfn.cpp src/ui.cpp
 PACK_SOURCES   = src/bwpack.cpp
 

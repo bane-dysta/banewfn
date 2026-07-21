@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(banewfn VERSION 1.3.1 LANGUAGES CXX)
+project(banewfn VERSION 1.4.0 LANGUAGES CXX)
 
 # C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -40,6 +40,8 @@ endif()
 # Core sources shared by tools
 set(CORE_SOURCES
     src/config.cpp
+    src/grep_dsl.cpp
+    src/grep_engine.cpp
     src/input.cpp
     src/utils.cpp
     src/inline_conf.cpp
@@ -47,6 +49,8 @@ set(CORE_SOURCES
 
 set(CORE_HEADERS
     src/config.h
+    src/grep_dsl.h
+    src/grep_engine.h
     src/input.h
     src/utils.h
     src/inline_conf.h

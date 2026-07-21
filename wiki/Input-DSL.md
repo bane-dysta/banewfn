@@ -251,7 +251,7 @@ BaneWfn 中的变量替换，始终遵循“先输入文件，后模块模板”
 1. 先展开 `wfn=` 指定的文件列表，以及数组变量对应的变量组合；
 2. 对于每一个“输入文件 × 变量组合”实例，先替换输入文件侧的变量与占位符；
 3. 再把这些已经定值的模块参数交给 `.conf` 模板，继续做模板侧占位符替换；
-4. 对于 `%command` 中的 `${output}`，则要等到对应的 Multiwfn 任务运行结束后，才会获得最终文件名。
+4. 对于 `%grep` 与 `%command` 中的 `${output}`，则要等到对应的 Multiwfn 任务输出文件名确定后，才会进行最终替换。
 
 换句话说，输入文件侧负责回答“这一轮跑谁、用哪些项目变量”，而模块模板侧负责回答“拿到这些参数后，应当生成哪些具体命令”。把这两层分开理解之后，变量、默认值、列展开和 `${output}` 的行为都会变得更容易预测。
 
@@ -260,7 +260,7 @@ BaneWfn 中的变量替换，始终遵循“先输入文件，后模块模板”
 
 ### 模块块
 
-模块块以 `[module]` 开始，可包含参数行、`%preraw`、`%process`、`%raw` 与 `%command`。一个典型例子如下：
+模块块以 `[module]` 开始，可包含参数行、`%preraw`、`%process`、`%raw`、`%grep` 与 `%command`。一个典型例子如下：
 
 ```ini
 [fmo]
@@ -285,7 +285,8 @@ end
 3. 再按 `%process` 中的顺序执行各步骤；
 4. 然后拼接模块内 `%raw`；
 5. 若以 `end` 收尾，则自动追加 `[quit]`；
-6. 最后在 Multiwfn 成功结束后执行 `%command`。
+6. Multiwfn 成功结束后依次执行模块内 `%grep` 规则；
+7. 所有 required `%grep` 规则成功后执行 `%command`。
 
 如果 `[main]` 序列中有变量，可以在模块块开头通过 `key value` 的形式指定参数，每行一个，例如：
 
@@ -465,6 +466,165 @@ end
 如果你的工作流需要整理输出目录、批量改名、写日志、调用可视化脚本或触发额外分析，那么 `%command` 往往是把“算完之后该做什么”显式写进工作流的最好位置。
 
 
+### `%grep`
+
+`%grep` 是结构化文本提取块。它不直接复刻系统 `grep`、`sed` 或 `awk` 的命令行参数，而是把提取过程组织为：
+
+```text
+文本来源 → 范围/行选择 → 字段解析与投影 → 验证 → 输出
+```
+
+基本形式如下：
+
+```ini
+%grep
+  [optional] [规则名:] [from <source> |] <selector>
+    [| <stage> ...]
+    [-> <path> | | emit <emitter> [to <path>]]
+end
+```
+
+一条规则可以写在一行，也可以用以 `|`、`->` 或 `..` 开头的后续行续写。模块内若省略 `from`，来源默认为当前任务生成的 `${output}`；独立 `%grep` 必须使用 `from <file>` 明确指定来源。独立提取任务不会调用 Multiwfn，也不要求波函数文件或 `banewfn.rc`。
+
+例如，提取 IFCT 输出范围：
+
+```ini
+[excit]
+%process
+  ifctdata state ${state}
+  ifct state ${state} fragdef fragdef.txt
+
+%grep
+  ifct: between "Contribution of each fragment to hole and electron"
+                .. "Intrinsic local excitation percentage"
+    -> ${input}_IFCT/ifctdata${state}.txt
+
+%command
+#!/bin/bash
+mv dislin.png ${input}_IFCT/state${state}.png
+end
+```
+
+模块任务的执行顺序固定为 `Multiwfn → %grep → %command`，因此 `%command` 可以直接处理 `%grep` 已生成的文件。输出路径的父目录会自动创建；文件先写入临时文件，再替换目标文件，解析失败时不会留下半写入结果。
+
+#### 来源与选择器
+
+支持的选择器如下：
+
+| 选择器 | 行为 |
+| --- | --- |
+| `between "A" .. "B"` | 包含起始行和结束行。 |
+| `inside "A" .. "B"` | 排除起始行和结束行。 |
+| `after "A"` | 提取标识行之后的内容，不包含标识行。 |
+| `before "B"` | 提取标识行之前的内容，不包含标识行。 |
+| `match "text"` | 选择匹配的行。 |
+
+普通字符串匹配会归一化横向空白，因此 `"Center Charge"` 可以匹配 `Center       Charge`，但输出仍保留原始行。需要按原始字符匹配时使用 `exact "..."`；正则表达式写作 `/.../`，忽略大小写写作 `/.../i`。
+
+重复范围或重复标识可使用 occurrence 修饰符：
+
+```ini
+between "A" .. "B" first
+between "A" .. "B" last
+between "A" .. "B" nth 3
+between "A" .. "B" all
+```
+
+`between`、`inside`、`after`、`before` 默认使用 `first`；`match` 默认使用 `all`。`all` 的范围提取按非重叠标识对依次拼接。
+
+#### 管线 stage
+
+当前版本支持以下通用 stage：
+
+| Stage | 说明 |
+| --- | --- |
+| `trim` | 去除每条文本行首尾空白。 |
+| `drop blank` | 删除空行。 |
+| `skip N` | 跳过前 N 行或记录。 |
+| `take N` | 保留前 N 行或记录。 |
+| `tail N` | 保留后 N 行或记录。 |
+| `reject <pattern>` | 删除匹配的文本行。 |
+| `scan "format"` | 按字段格式捕获并类型化记录。 |
+| `scan strict "format"` | 任一非空行无法解析时失败。 |
+| `split ws` | 按普通空白拆分为列。 |
+| `split ","` | 按给定字符串分隔符拆分。 |
+| `cols ...` | 选择或重命名字段；直接作用于文本时自动先执行 `split ws`。 |
+| `expect rows N` | 验证行数；也支持 `== != < <= > >=`。 |
+| `expect unique <field>` | 验证字段唯一。 |
+| `expect contiguous <field>` | 验证正整数索引从 1 连续且不重复。 |
+| `expect finite <field>` | 验证字段为有限数值。 |
+
+`scan` 字段写作 `{name:type}`。字段名允许字母、数字、下划线、点号和连字符，常用类型如下：
+
+| 类型 | 含义 |
+| --- | --- |
+| `int` | 整数。 |
+| `num` | 浮点数，支持 `E` / `D` 指数。 |
+| `word` | 不含空白的词。 |
+| `str` | 普通字符串字段。 |
+| `rest` | 当前行剩余内容。 |
+
+例如解析 RESP2 电荷：
+
+```ini
+%grep
+  resp2: from resp.out | inside "Center Charge" .. "Sum of charges" last
+    | scan "{atom:int}({element:word}) {charge.resp2:num}"
+    | expect rows 12
+    | emit atomvec
+end
+```
+
+实际 Multiwfn 输出可能同时包含 RESP 与 RESP2 两段 `Center Charge` 表；此时应使用 `last` 选择后一段。标识符按实际输出书写，例如某些版本输出 `Sum of charges` 而不是 `Sum of charges:`。
+
+`cols` 使用一基列号，负数从末列开始：
+
+```ini
+%grep
+  conformers: from search.out | match "Conformer:"
+    | cols conformer=2 rmse=4 rrmse=6
+    -> conformers.tsv
+end
+```
+
+#### 输出
+
+普通输出使用 `-> <path>`。原始文本按原行写入；结构化记录根据扩展名序列化：`.csv` 为 CSV，`.jsonl` 为每行一个 JSON 对象，`.txt` / `.tsv` 为制表符分隔。单字段记录自然输出为每行一个值。
+
+`emit atomvec` 用于逐原子属性。它自动识别 `atom` / `index` / `center` 为原子序号，`element` / `symbol` 为元素，并把唯一的非保留数值字段名作为属性名。若字段名为 `value`，需要显式指定属性名：
+
+```ini
+inside "Center Charge" .. "Sum of charges" last
+| scan "{atom:int}({element:word}) {value:num}"
+| emit atomvec charge.resp2 to RESP2.atomvec.kv
+```
+
+未指定路径时，默认文件名为 `<property>.atomvec.kv`。输出前会验证原子序号为正整数、唯一且从 1 连续，并验证属性值为有限数值。
+
+`emit kv` 用于单条结构化记录：
+
+```ini
+%grep
+  excitation: from hole-ele.out | match "Excitation energy of this state"
+    | scan "Excitation energy of this state: {excitation.energy:num} eV"
+    | emit kv
+end
+```
+
+规则名为 `excitation` 且未指定路径时，默认生成 `excitation.kv`。
+
+普通规则默认是 required：来源必须可读、标识必须找到、结果必须非空、`scan` 至少解析一条记录、输出必须成功。允许结果不存在时，在规则前加 `optional`：
+
+```ini
+%grep
+  optional note: from analysis.out | match "Optional analysis result"
+    -> optional-note.txt
+end
+```
+
+未匹配时只给出 warning，并且不创建空文件。`wait` 或 `--screen` 模式通常没有当前 `.out` 文件；这时使用默认来源的规则会失败，应改用显式 `from <file>`，或改为产生输出文件的非交互模式。
+
+
 ### `collect(dir);`
 
 `collect(dir);` 是一个块外的产物收集指令，用来把前面若干任务新生成的文件统一移动到目录 `dir`。它不是 `%command` 块，也不会调用 Multiwfn；推荐写在两个已经用 `end` / `wait` 结束的任务块之间，或写在某个模块块的 `end` / `wait` 之后作为收集点。
@@ -515,12 +675,14 @@ collect(NTOs);
 
 - 对于 module 块，`end` 表示按非交互模式执行 Multiwfn，并在成功后执行 `%command`；
 - 对于独立 `%raw` 或独立 `%preraw`，`end` 表示按非交互模式执行原始 Multiwfn 序列；
+- 对于独立 `%grep`，`end` 表示提取任务结束；
 - 对于独立 `%command`，`end` 表示命令块结束。
 
 #### `wait`
 
 - 对于 module 块，`wait` 表示进入交互模式；程序会先喂入预设命令，再把 Multiwfn 会话交还给用户；
 - 对于独立 `%raw` 或独立 `%preraw`，`wait` 表示把对应原始块内容作为交互模式的预输入；
+- 对于独立 `%grep`，`wait` 与 `end` 行为一致；
 - 对于独立 `%command`，`wait` 与 `end` 行为一致。
 
 如果你希望脚本先帮你走完一部分固定菜单，再由你手动接管剩余操作，那么 `wait` 是最自然的选择；如果你希望整段流程完全无人值守地执行，则应使用 `end`。
