@@ -71,7 +71,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 ## 预编译版安装
-请前往[软件主页](https://bane-dysta.top/software/banewfn)按照指引找到最新版下载方式。在一个完整的安装流程中，通常会得到以下几类产物：
+请前往[软件主页](https://bane-dysta.top/software/banewfn)按照页面说明下载安装包。在一个完整的安装流程中，通常会得到以下几类产物：
 
 - 主程序 `banewfn`；
 - 打包工具 `bwpack`；

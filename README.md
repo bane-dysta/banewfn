@@ -2,7 +2,7 @@
 
 BaneWfn 是一个面向 Multiwfn 的工作流脚本器，用来把重复、固定、容易出错的菜单操作整理成可复用的脚本。它不替代 Multiwfn，也不额外实现量子化学分析算法，而是把输入文件、模块配置和后处理命令组织在一起，让常见分析流程更容易复用、共享和批量执行。
 
-在使用方式上，BaneWfn 以两类文本文件为核心：输入文件负责描述任务顺序、变量和批处理逻辑，配置文件负责封装常见的 Multiwfn 菜单路径。如果模块化流程还不够用，也可以直接在脚本里插入原始输入序列、用 `%grep` 从输出中提取文本或结构化字段，或者直接执行 bash/cmd 脚本。
+在使用方式上，BaneWfn 以两类文本文件为核心：输入文件负责描述任务顺序、变量和批处理逻辑，配置文件负责封装常见的 Multiwfn 菜单路径。如果模块化流程还不够用，也可以直接在脚本里插入原始输入序列，或者直接执行bash/cmd脚本。
 
 BaneWfn 适合这几类工作：同一套分析要在很多波函数文件上反复执行；组内已有较稳定的分析路径，希望沉淀成模板；Multiwfn 结束后还需要继续做文件整理或调用外部脚本；同一份脚本里需要把多个阶段的分析串成一个完整流程。
 
@@ -82,22 +82,6 @@ banewfn demo.bw -w test.fchk
 ```
 
 这份脚本会加载 `fmo.conf`，按模块配置展开对应的 Multiwfn 输入序列，并顺序执行整个任务。
-
-`%grep` 也可以作为不依赖 Multiwfn 的独立文本提取任务。例如：
-
-```ini
-%grep
-  resp2: from resp.out | inside "Center Charge" .. "Sum of charges" last
-    | scan "{atom:int}({element:word}) {charge.resp2:num}"
-    | emit atomvec
-end
-```
-
-```bash
-banewfn extract.bw
-```
-
-独立 `%grep` 不要求波函数文件或 `banewfn.rc`。完整语法见 [输入文件与 DSL](wiki/Input-DSL.md#grep)。
 
 ## 更新历史
 
