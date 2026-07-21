@@ -3,15 +3,33 @@
   "name": "BaneWfn",
   "scopeName": "source.bw",
   "patterns": [
-    { "include": "#inline-conf-markers" },
-    { "include": "#comments" },
-    { "include": "#headers" },
-    { "include": "#blocks" },
-    { "include": "#directives" },
-    { "include": "#module-params" },
-    { "include": "#keywords" },
-    { "include": "#variables" },
-    { "include": "#strings" }
+    {
+      "include": "#inline-conf-markers"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#headers"
+    },
+    {
+      "include": "#blocks"
+    },
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#module-params"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#variables"
+    },
+    {
+      "include": "#strings"
+    }
   ],
   "repository": {
     "inline-conf-markers": {
@@ -35,12 +53,21 @@
         {
           "match": "^\\s*(wfn|core|dryrun|nogui|wfn_rebase)(=)(.*)",
           "captures": {
-            "1": { "name": "keyword.other.banewfn" },
-            "2": { "name": "keyword.operator.assignment.banewfn" },
+            "1": {
+              "name": "keyword.other.banewfn"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.banewfn"
+            },
             "3": {
               "patterns": [
-                { "include": "#variables" },
-                { "name": "string.unquoted.banewfn", "match": ".*" }
+                {
+                  "include": "#variables"
+                },
+                {
+                  "name": "string.unquoted.banewfn",
+                  "match": ".*"
+                }
               ]
             }
           }
@@ -48,12 +75,21 @@
         {
           "match": "^\\s*([a-zA-Z0-9_]+)(\\*?=)(.*)",
           "captures": {
-            "1": { "name": "variable.other.readwrite.banewfn" },
-            "2": { "name": "keyword.operator.assignment.banewfn" },
+            "1": {
+              "name": "variable.other.readwrite.banewfn"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.banewfn"
+            },
             "3": {
               "patterns": [
-                { "include": "#variables" },
-                { "name": "string.unquoted.banewfn", "match": ".*" }
+                {
+                  "include": "#variables"
+                },
+                {
+                  "name": "string.unquoted.banewfn",
+                  "match": ".*"
+                }
               ]
             }
           }
@@ -65,11 +101,18 @@
         {
           "match": "^\\s*(?!\\[|%|end\\b|wait\\b|collect\\s*\\(|wfn|core|dryrun|nogui|wfn_rebase)([a-zA-Z0-9_\\-\\+]+)(?:\\s+(.*))?$",
           "captures": {
-            "1": { "name": "variable.parameter.banewfn" },
+            "1": {
+              "name": "variable.parameter.banewfn"
+            },
             "2": {
               "patterns": [
-                { "include": "#variables" },
-                { "name": "string.unquoted.banewfn", "match": ".*" }
+                {
+                  "include": "#variables"
+                },
+                {
+                  "name": "string.unquoted.banewfn",
+                  "match": ".*"
+                }
               ]
             }
           }
@@ -79,41 +122,62 @@
     "blocks": {
       "patterns": [
         {
+          "include": "#grep-block"
+        },
+        {
           "name": "entity.name.section.banewfn",
           "match": "^\\s*(\\[)([^\\]]+)(\\])",
           "captures": {
-            "1": { "name": "punctuation.definition.tag.begin.banewfn" },
-            "2": { "name": "entity.name.tag.banewfn" },
-            "3": { "name": "punctuation.definition.tag.end.banewfn" }
+            "1": {
+              "name": "punctuation.definition.tag.begin.banewfn"
+            },
+            "2": {
+              "name": "entity.name.tag.banewfn"
+            },
+            "3": {
+              "name": "punctuation.definition.tag.end.banewfn"
+            }
           }
         },
         {
           "begin": "^\\s*(%process)\\b",
           "beginCaptures": {
-            "1": { "name": "keyword.control.banewfn" }
+            "1": {
+              "name": "keyword.control.banewfn"
+            }
           },
           "end": "^\\s*(?=%|\\[|end\\b|wait\\b)",
           "patterns": [
-            { "include": "#comments" },
+            {
+              "include": "#comments"
+            },
             {
               "begin": "^\\s*([a-zA-Z0-9_\\-\\+]+)",
               "beginCaptures": {
-                "1": { "name": "entity.name.function.banewfn" }
+                "1": {
+                  "name": "entity.name.function.banewfn"
+                }
               },
               "end": "$",
               "patterns": [
                 {
                   "begin": "\\s+([^\\s#]+)(?:\\s+(?=[^\\s#]))?",
                   "beginCaptures": {
-                    "1": { "name": "variable.parameter.banewfn" }
+                    "1": {
+                      "name": "variable.parameter.banewfn"
+                    }
                   },
                   "end": "(?=\\s|$|#)",
                   "contentName": "string.unquoted.banewfn",
                   "patterns": [
-                    { "include": "#variables" }
+                    {
+                      "include": "#variables"
+                    }
                   ]
                 },
-                { "include": "#comments" }
+                {
+                  "include": "#comments"
+                }
               ]
             }
           ]
@@ -121,34 +185,54 @@
         {
           "begin": "^\\s*(%preraw)\\b",
           "beginCaptures": {
-            "1": { "name": "keyword.control.banewfn" }
+            "1": {
+              "name": "keyword.control.banewfn"
+            }
           },
           "end": "^\\s*(?=%|\\[|end\\b|wait\\b)",
           "patterns": [
-            { "include": "#variables" },
-            { "name": "string.unquoted.raw.banewfn", "match": ".*" }
+            {
+              "include": "#variables"
+            },
+            {
+              "name": "string.unquoted.raw.banewfn",
+              "match": ".*"
+            }
           ]
         },
         {
           "begin": "^\\s*(%raw)\\b",
           "beginCaptures": {
-            "1": { "name": "keyword.control.banewfn" }
+            "1": {
+              "name": "keyword.control.banewfn"
+            }
           },
           "end": "^\\s*(?=%|\\[|end\\b|wait\\b)",
           "patterns": [
-            { "include": "#variables" },
-            { "name": "string.unquoted.raw.banewfn", "match": ".*" }
+            {
+              "include": "#variables"
+            },
+            {
+              "name": "string.unquoted.raw.banewfn",
+              "match": ".*"
+            }
           ]
         },
         {
           "begin": "^\\s*(%command)\\b",
           "beginCaptures": {
-            "1": { "name": "keyword.control.banewfn" }
+            "1": {
+              "name": "keyword.control.banewfn"
+            }
           },
           "end": "^\\s*(?=%|\\[|end\\b|wait\\b)",
           "patterns": [
-            { "include": "#variables" },
-            { "include": "source.shell" }
+            {
+              "include": "#variables"
+            },
+            {
+              "include": "source.shell"
+            }
           ]
         }
       ]
@@ -178,15 +262,26 @@
         {
           "match": "^\\s*(collect)\\s*(\\()([^)]*)(\\))\\s*;?",
           "captures": {
-            "1": { "name": "keyword.control.directive.collect.banewfn" },
-            "2": { "name": "punctuation.definition.arguments.begin.banewfn" },
+            "1": {
+              "name": "keyword.control.directive.collect.banewfn"
+            },
+            "2": {
+              "name": "punctuation.definition.arguments.begin.banewfn"
+            },
             "3": {
               "patterns": [
-                { "include": "#variables" },
-                { "name": "string.unquoted.banewfn", "match": ".*" }
+                {
+                  "include": "#variables"
+                },
+                {
+                  "name": "string.unquoted.banewfn",
+                  "match": ".*"
+                }
               ]
             },
-            "4": { "name": "punctuation.definition.arguments.end.banewfn" }
+            "4": {
+              "name": "punctuation.definition.arguments.end.banewfn"
+            }
           }
         }
       ]
@@ -198,14 +293,334 @@
           "begin": "\"",
           "end": "\"",
           "patterns": [
-            { "name": "constant.character.escape.banewfn", "match": "\\\\." },
-            { "include": "#variables" }
+            {
+              "name": "constant.character.escape.banewfn",
+              "match": "\\\\."
+            },
+            {
+              "include": "#variables"
+            }
           ]
         },
         {
           "name": "string.quoted.single.banewfn",
           "begin": "'",
           "end": "'"
+        }
+      ]
+    },
+    "grep-block": {
+      "patterns": [
+        {
+          "begin": "^\\s*(%grep)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.grep.block.banewfn"
+            }
+          },
+          "end": "^\\s*(?=%|\\[|end\\b|wait\\b)",
+          "contentName": "meta.block.grep.banewfn",
+          "patterns": [
+            {
+              "include": "#grep-regexes"
+            },
+            {
+              "include": "#grep-strings"
+            },
+            {
+              "include": "#grep-comments"
+            },
+            {
+              "include": "#grep-rule-labels"
+            },
+            {
+              "include": "#grep-columns"
+            },
+            {
+              "include": "#variables"
+            },
+            {
+              "include": "#grep-keywords"
+            },
+            {
+              "include": "#grep-operators"
+            },
+            {
+              "include": "#grep-numbers"
+            }
+          ]
+        }
+      ]
+    },
+    "grep-comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.grep.banewfn",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "grep-rule-labels": {
+      "patterns": [
+        {
+          "match": "^\\s*(?:(optional)\\s+)?([A-Za-z0-9_.-]+)(:)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.optional.grep.banewfn"
+            },
+            "2": {
+              "name": "entity.name.function.rule.grep.banewfn"
+            },
+            "3": {
+              "name": "punctuation.separator.label.grep.banewfn"
+            }
+          }
+        }
+      ]
+    },
+    "grep-regexes": {
+      "patterns": [
+        {
+          "begin": "\\b(between|inside|after|before|match|reject)\\b(\\s+)(/)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.selector.grep.banewfn"
+            },
+            "3": {
+              "name": "punctuation.definition.string.begin.regexp.grep.banewfn"
+            }
+          },
+          "end": "(?<!\\\\)(/)([iI])?",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.string.end.regexp.grep.banewfn"
+            },
+            "2": {
+              "name": "storage.modifier.ignore-case.grep.banewfn"
+            }
+          },
+          "contentName": "string.regexp.grep.banewfn",
+          "patterns": [
+            {
+              "name": "constant.character.escape.regexp.grep.banewfn",
+              "match": "\\\\."
+            },
+            {
+              "include": "#variables"
+            }
+          ]
+        },
+        {
+          "begin": "(\\.\\.)(\\s*)(/)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.operator.range.grep.banewfn"
+            },
+            "3": {
+              "name": "punctuation.definition.string.begin.regexp.grep.banewfn"
+            }
+          },
+          "end": "(?<!\\\\)(/)([iI])?",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.string.end.regexp.grep.banewfn"
+            },
+            "2": {
+              "name": "storage.modifier.ignore-case.grep.banewfn"
+            }
+          },
+          "contentName": "string.regexp.grep.banewfn",
+          "patterns": [
+            {
+              "name": "constant.character.escape.regexp.grep.banewfn",
+              "match": "\\\\."
+            },
+            {
+              "include": "#variables"
+            }
+          ]
+        }
+      ]
+    },
+    "grep-scan-fields": {
+      "patterns": [
+        {
+          "match": "(?<!\\$)(\\{)([A-Za-z0-9_.-]+)(\\s*:\\s*)(int|num|word|str|rest)(\\})",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.field.begin.grep.banewfn"
+            },
+            "2": {
+              "name": "variable.other.member.field.grep.banewfn"
+            },
+            "3": {
+              "name": "punctuation.separator.type.grep.banewfn"
+            },
+            "4": {
+              "name": "storage.type.field.grep.banewfn"
+            },
+            "5": {
+              "name": "punctuation.definition.field.end.grep.banewfn"
+            }
+          }
+        }
+      ]
+    },
+    "grep-strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.grep.banewfn",
+          "begin": "\"",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.grep.banewfn"
+            }
+          },
+          "end": "\"",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.grep.banewfn"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.grep.banewfn",
+              "match": "\\\\."
+            },
+            {
+              "include": "#variables"
+            },
+            {
+              "include": "#grep-scan-fields"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.grep.banewfn",
+          "begin": "'",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.grep.banewfn"
+            }
+          },
+          "end": "'",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.grep.banewfn"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.grep.banewfn",
+              "match": "\\\\."
+            },
+            {
+              "include": "#variables"
+            },
+            {
+              "include": "#grep-scan-fields"
+            }
+          ]
+        }
+      ]
+    },
+    "grep-columns": {
+      "patterns": [
+        {
+          "match": "\\b([A-Za-z0-9_.-]+)(=)(-?\\d+)\\b",
+          "captures": {
+            "1": {
+              "name": "variable.other.member.column.grep.banewfn"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.grep.banewfn"
+            },
+            "3": {
+              "name": "constant.numeric.integer.column.grep.banewfn"
+            }
+          }
+        },
+        {
+          "match": "\\b([A-Za-z0-9_.-]+)(=)([A-Za-z0-9_.-]+)\\b",
+          "captures": {
+            "1": {
+              "name": "variable.other.member.column.grep.banewfn"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.grep.banewfn"
+            },
+            "3": {
+              "name": "variable.other.member.source-column.grep.banewfn"
+            }
+          }
+        }
+      ]
+    },
+    "grep-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.selector.grep.banewfn",
+          "match": "\\b(between|inside|after|before|match)\\b"
+        },
+        {
+          "name": "keyword.control.source.grep.banewfn",
+          "match": "\\b(from)\\b"
+        },
+        {
+          "name": "keyword.control.optional.grep.banewfn",
+          "match": "\\b(optional)\\b"
+        },
+        {
+          "name": "storage.modifier.match.grep.banewfn",
+          "match": "\\b(exact|first|last|nth|all|strict)\\b"
+        },
+        {
+          "name": "support.function.pipeline.grep.banewfn",
+          "match": "\\b(trim|drop|drop_blank|drop-blank|skip|take|tail|reject|scan|split|cols|expect)\\b"
+        },
+        {
+          "name": "constant.language.pipeline.grep.banewfn",
+          "match": "\\b(blank|rows|unique|contiguous|finite|ws)\\b"
+        },
+        {
+          "name": "keyword.control.output.grep.banewfn",
+          "match": "\\b(emit|to)\\b"
+        },
+        {
+          "name": "support.type.emitter.grep.banewfn",
+          "match": "\\b(atomvec|kv)\\b"
+        }
+      ]
+    },
+    "grep-operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.output.grep.banewfn",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.pipe.grep.banewfn",
+          "match": "\\|"
+        },
+        {
+          "name": "keyword.operator.range.grep.banewfn",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.comparison.grep.banewfn",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.assignment.grep.banewfn",
+          "match": "(?<![<>=!])=(?!=)"
+        }
+      ]
+    },
+    "grep-numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.grep.banewfn",
+          "match": "(?<![A-Za-z0-9_.-])[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eEdD][-+]?\\d+)?(?![A-Za-z0-9_.-])"
         }
       ]
     }
