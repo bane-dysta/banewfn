@@ -2,7 +2,7 @@
   "name": "banewfn-syntax",
   "displayName": "BaneWfn Syntax",
   "description": "Syntax highlighting and workflow tools for BaneWfn (.bw/.bwc).",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "publisher": "bane-dysta",
   "engines": {
     "vscode": "^1.80.0"
@@ -34,7 +34,11 @@
           ".bw",
           ".bwc"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./media/banewfn-light.png",
+          "dark": "./media/banewfn-dark.png"
+        }
       },
       {
         "id": "banewfn-conf",
