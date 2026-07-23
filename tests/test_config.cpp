@@ -53,7 +53,8 @@ TEST_CASE("loadBaneWfnConfig parses rc values and expands HOME references") {
     writeTextFile(rcFile,
                   "Multiwfn_exec = ~/bin/Multiwfn # comment\n"
                   "confpath = ${HOME}/conf\n"
-                  "cores = 8\n");
+                  "cores = 8\n"
+                  "citations_output = \"~/exports/${input}_refs.bib\"\n");
 
     ConfigManager manager;
     REQUIRE(manager.loadBaneWfnConfig(rcFile.string()));
@@ -62,6 +63,8 @@ TEST_CASE("loadBaneWfnConfig parses rc values and expands HOME references") {
     CHECK(cfg.multiwfnExec == (temp.path() / "bin" / "Multiwfn").string());
     CHECK(cfg.confPath == (temp.path() / "conf").string());
     CHECK(cfg.cores == 8);
+    CHECK(cfg.citationsOutput ==
+          (temp.path() / "exports" / "${input}_refs.bib").string());
 }
 
 TEST_CASE("loadBaneWfnConfig ignores invalid cores instead of throwing") {
@@ -137,6 +140,70 @@ TEST_CASE("missing quit section falls back to a single q command") {
     const auto& mod = manager.getModuleConfig("plane");
     const std::vector<std::string> expectedQuit = {"q"};
     CHECK(mod.quitCommands == expectedQuit);
+}
+
+TEST_CASE("citations section binds catalog ids to executable sections") {
+    const std::string confText = R"(
+[main]
+20
+
+[nci]
+1
+${grid:-2}
+-default-
+grid = 2
+
+[rdg]
+2
+
+[citations]
+weak-common @main reason="Weak-interaction analysis framework"
+johnson2010 @nci @rdg reason="NCI analysis with grid ${grid:-2}"
+
+[quit]
+0
+q
+)";
+
+    ConfigManager manager;
+    REQUIRE(manager.loadModuleConfigFromText("weak", confText, "weak.conf"));
+
+    const auto& mod = manager.getModuleConfig("weak");
+    CHECK(mod.origin == "weak.conf");
+    CHECK(mod.sections.count("citations") == 0);
+    REQUIRE(mod.citationBindings.size() == 2);
+
+    CHECK(mod.citationBindings[0].id == "weak-common");
+    CHECK(mod.citationBindings[0].targets == std::vector<std::string>{"main"});
+    CHECK(mod.citationBindings[0].reason == "Weak-interaction analysis framework");
+
+    CHECK(mod.citationBindings[1].id == "johnson2010");
+    CHECK(mod.citationBindings[1].targets ==
+          std::vector<std::string>{"nci", "rdg"});
+    CHECK(mod.citationBindings[1].reason ==
+          "NCI analysis with grid ${grid:-2}");
+}
+
+TEST_CASE("citations section rejects malformed and unknown targets") {
+    ConfigManager malformed;
+    CHECK_FALSE(malformed.loadModuleConfigFromText(
+        "weak",
+        "[main]\n20\n[citations]\npaper reason=missing-target\n[quit]\nq\n",
+        "malformed.conf"));
+    CHECK_FALSE(malformed.hasModuleConfig("weak"));
+
+    ConfigManager unknownTarget;
+    CHECK_FALSE(unknownTarget.loadModuleConfigFromText(
+        "weak",
+        "[main]\n20\n[citations]\npaper @nci\n[quit]\nq\n",
+        "unknown.conf"));
+    CHECK_FALSE(unknownTarget.hasModuleConfig("weak"));
+
+    ConfigManager quoted;
+    CHECK_FALSE(quoted.loadModuleConfigFromText(
+        "weak",
+        "[main]\n20\n[citations]\npaper @main reason=\"unterminated\n[quit]\nq\n",
+        "quoted.conf"));
 }
 
 } // TEST_SUITE("Config")

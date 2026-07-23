@@ -55,6 +55,26 @@ end
     CHECK_FALSE(missing.loaded);
 }
 
+
+TEST_CASE("parse citations_output workflow override without treating it as a custom variable") {
+    TempDir temp;
+    const auto inpFile = temp.path() / "citation_output.bw";
+    writeTextFile(inpFile, R"(citations_output = "${input}_paper.bib"
+prefix=paper
+
+bane.cite demo {
+    title = "Demo"
+}
+)");
+
+    const ParsedInputFile parsed = InputParser::parseInpFileDetailed(inpFile.string());
+    REQUIRE(parsed.loaded);
+    CHECK(parsed.citationsOutputSpecified);
+    CHECK(parsed.citationsOutput == "${input}_paper.bib");
+    CHECK(parsed.customVars.count("citations_output") == 0);
+    CHECK(parsed.customVars.at("prefix").at(0) == "paper");
+}
+
 TEST_CASE("parseInpFileWithWfnAndCoresAndVars parses headers modules rebase and anonymous command blocks") {
     TempDir temp;
     const auto inpFile = temp.path() / "workflow.inp";
@@ -456,6 +476,63 @@ bane.plane.map ring_elf {
     CHECK(tasks[3].params.at("output") == "case1_complex_plane.txt");
 }
 
+TEST_CASE("parse citation declarations and citation output tasks") {
+    TempDir temp;
+    const auto inpFile = temp.path() / "citations.bw";
+    writeTextFile(inpFile, R"(prefix=paper
+
+bane.cite ${prefix}2019 {
+    reason = "Equation for ${input}"
+    authors = "Alpha One; Beta Two"
+    title = "A Citation"
+    year = 2019
+    doi = "https://doi.org/10.1000/TEST"
+}
+
+bane.citations.write refs {
+    output = ${input}_references.bib
+    format = bibtex
+}
+)"
+    );
+
+    ParsedInputFile parsed = InputParser::parseInpFileDetailed(inpFile.string());
+    REQUIRE(parsed.loaded);
+    REQUIRE(parsed.tasks.size() == 2);
+
+    CHECK(parsed.tasks[0].isCitation());
+    CHECK(parsed.tasks[0].citationId == "${prefix}2019");
+    CHECK(parsed.tasks[0].params.at("reason") == "Equation for ${input}");
+    CHECK(parsed.tasks[0].origin.find("input:") == 0);
+
+    CHECK(parsed.tasks[1].isCitationOutput());
+    CHECK(parsed.tasks[1].citationOutputName == "refs");
+    CHECK(parsed.tasks[1].params.at("format") == "bibtex");
+
+    InputParser::applyPlaceholderReplacement(parsed.tasks, "sample.fchk", parsed.customVars);
+    CHECK(parsed.tasks[0].citationId == "paper2019");
+    CHECK(parsed.tasks[0].params.at("reason") == "Equation for sample");
+    CHECK(parsed.tasks[1].params.at("output") == "sample_references.bib");
+}
+
+
+TEST_CASE("citation blocks keep builtin list-like names as ordinary fields") {
+    TempDir temp;
+    const auto inpFile = temp.path() / "citation_fields.bw";
+    writeTextFile(inpFile, R"(bane.cite paper {
+    title = "Paper"
+    operator = "not a builtin operator"
+}
+)"
+    );
+
+    const ParsedInputFile parsed = InputParser::parseInpFileDetailed(inpFile.string());
+    REQUIRE(parsed.loaded);
+    REQUIRE(parsed.tasks.size() == 1);
+    CHECK(parsed.tasks[0].isCitation());
+    CHECK(parsed.tasks[0].builtinBody.empty());
+    CHECK(parsed.tasks[0].params.at("operator") == "not a builtin operator");
+}
 
 TEST_CASE("invalid core header is ignored instead of silently becoming zero") {
     TempDir temp;
@@ -473,12 +550,34 @@ TEST_CASE("ModuleTask kind represents exactly one execution category") {
     CHECK_FALSE(task.isWfnRebase());
     CHECK_FALSE(task.isCollect());
     CHECK_FALSE(task.isBuiltin());
+    CHECK_FALSE(task.isCitation());
+    CHECK_FALSE(task.isCitationOutput());
 
     task.kind = TaskKind::Collect;
     CHECK_FALSE(task.isWorkflow());
     CHECK(task.isCollect());
     CHECK_FALSE(task.isWfnRebase());
     CHECK_FALSE(task.isBuiltin());
+    CHECK_FALSE(task.isCitation());
+    CHECK_FALSE(task.isCitationOutput());
+}
+
+
+TEST_CASE("only bane.cite creates citation metadata") {
+    TempDir temp;
+    const auto inpFile = temp.path() / "misspelled_citation.bwc";
+    writeTextFile(inpFile, R"(bane.site igmh-paper {
+    title = "IGMH Paper"
+    reason = "IGMH"
+}
+)");
+
+    const ParsedInputFile parsed = InputParser::parseInpFileDetailed(inpFile.string());
+    REQUIRE(parsed.loaded);
+    REQUIRE(parsed.tasks.size() == 1);
+    CHECK_FALSE(parsed.tasks[0].isCitation());
+    CHECK(parsed.tasks[0].kind == TaskKind::Builtin);
+    CHECK(parsed.tasks[0].builtinName == "site");
 }
 
 } // TEST_SUITE("InputParser")

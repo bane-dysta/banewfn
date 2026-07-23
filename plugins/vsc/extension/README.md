@@ -5,14 +5,14 @@ This extension adds:
 - Syntax highlighting for `.bw` / `.bwc`
 - Basic syntax highlighting for opened BaneWfn module `.conf` files
 - **Run Current Script** from the editor title or command palette
-- **Pack Current Script** via `bwpack` for `.bw` files
+- **Pack or Repack Current Script** via `bwpack` for `.bw` and `.bwc` files
 - **Open Related Conf** for the module under cursor
 - `F12` / Go to Definition from `[module]` to inline conf or external `module.conf`
 
 ## Commands
 
 - `BaneWfn: Run Current Script`
-- `BaneWfn: Pack Current Script`
+- `BaneWfn: Pack or Repack Current Script`
 - `BaneWfn: Open Related Conf`
 
 ## Settings
@@ -33,6 +33,20 @@ This extension adds:
 3. `banewfn.rcPath`
 4. Nearby `banewfn.rc` discovery
 5. Workspace fallback search for `module.conf`
+
+## 1.5.0
+
+- Added header highlighting for the per-workflow `citations_output` override.
+
+## 1.4.0
+
+- The pack command accepts `.bwc` files and invokes `bwpack --inplace` to refresh their inline conf and citation catalog blocks.
+- The editor title pack action is available for both `.bw` and `.bwc` files.
+
+## 1.3.0
+
+- Added dedicated highlighting for module `[citations]` bindings, section selectors, reasons, and placeholders.
+- Added marker highlighting for bundled inline citation catalogs in `.bwc` files.
 
 ## 1.2.0
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(banewfn VERSION 1.4.0 LANGUAGES CXX)
+project(banewfn VERSION 1.5.5 LANGUAGES CXX)
 
 # C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -39,6 +39,8 @@ endif()
 
 # Core sources shared by tools
 set(CORE_SOURCES
+    src/bwpack_support.cpp
+    src/citation.cpp
     src/config.cpp
     src/grep_dsl.cpp
     src/grep_engine.cpp
@@ -48,6 +50,8 @@ set(CORE_SOURCES
 )
 
 set(CORE_HEADERS
+    src/bwpack_support.h
+    src/citation.h
     src/config.h
     src/grep_dsl.h
     src/grep_engine.h
@@ -142,6 +146,7 @@ file(WRITE "${BANEWFN_GENERATED_RC}"
     "Multiwfn_exec=${BANEWFN_DEFAULT_MULTIWFN_EXEC}\n"
     "confpath=${BANEWFN_GENERATED_CONFPATH}\n"
     "cores=${BANEWFN_DEFAULT_CORES}\n"
+    "citations_output=references.bib\n"
 )
 
 install(TARGETS banewfn bwpack

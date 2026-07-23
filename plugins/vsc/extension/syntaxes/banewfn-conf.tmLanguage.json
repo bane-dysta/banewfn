@@ -3,11 +3,24 @@
   "name": "BaneWfn Conf",
   "scopeName": "source.bwconf",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#sections" },
-    { "include": "#defaults" },
-    { "include": "#variables" },
-    { "include": "#strings" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#citations"
+    },
+    {
+      "include": "#sections"
+    },
+    {
+      "include": "#defaults"
+    },
+    {
+      "include": "#variables"
+    },
+    {
+      "include": "#strings"
+    }
   ],
   "repository": {
     "comments": {
@@ -18,15 +31,75 @@
         }
       ]
     },
+    "citations": {
+      "patterns": [
+        {
+          "begin": "^\\s*(\\[)(citations)(\\])\\s*$",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.bwconf"
+            },
+            "2": {
+              "name": "keyword.control.citations.bwconf"
+            },
+            "3": {
+              "name": "punctuation.definition.tag.end.bwconf"
+            }
+          },
+          "end": "(?=^\\s*\\[)",
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "name": "entity.name.type.citation.bwconf",
+              "match": "^\\s*([A-Za-z0-9_.:+/\\-]+)",
+              "captures": {
+                "1": {
+                  "name": "entity.name.type.citation.bwconf"
+                }
+              }
+            },
+            {
+              "name": "support.constant.section-selector.bwconf",
+              "match": "@[A-Za-z0-9_+\\-]+"
+            },
+            {
+              "match": "\\b(reason)(\\s*=)",
+              "captures": {
+                "1": {
+                  "name": "support.type.property-name.bwconf"
+                },
+                "2": {
+                  "name": "keyword.operator.assignment.bwconf"
+                }
+              }
+            },
+            {
+              "include": "#variables"
+            },
+            {
+              "include": "#strings"
+            }
+          ]
+        }
+      ]
+    },
     "sections": {
       "patterns": [
         {
           "name": "entity.name.section.bwconf",
           "match": "^\\s*(\\[)([^\\]]+)(\\])",
           "captures": {
-            "1": { "name": "punctuation.definition.tag.begin.bwconf" },
-            "2": { "name": "entity.name.tag.bwconf" },
-            "3": { "name": "punctuation.definition.tag.end.bwconf" }
+            "1": {
+              "name": "punctuation.definition.tag.begin.bwconf"
+            },
+            "2": {
+              "name": "entity.name.tag.bwconf"
+            },
+            "3": {
+              "name": "punctuation.definition.tag.end.bwconf"
+            }
           }
         }
       ]
@@ -36,24 +109,37 @@
         {
           "begin": "^\\s*(-default-)\\s*$",
           "beginCaptures": {
-            "1": { "name": "keyword.control.bwconf" }
+            "1": {
+              "name": "keyword.control.bwconf"
+            }
           },
           "end": "(?=^\\s*\\[)",
           "patterns": [
             {
               "match": "^\\s*([A-Za-z0-9_\\-\\+]+)\\s*=\\s*(.*)$",
               "captures": {
-                "1": { "name": "variable.parameter.bwconf" },
+                "1": {
+                  "name": "variable.parameter.bwconf"
+                },
                 "2": {
                   "patterns": [
-                    { "include": "#variables" },
-                    { "include": "#strings" },
-                    { "name": "string.unquoted.bwconf", "match": ".*" }
+                    {
+                      "include": "#variables"
+                    },
+                    {
+                      "include": "#strings"
+                    },
+                    {
+                      "name": "string.unquoted.bwconf",
+                      "match": ".*"
+                    }
                   ]
                 }
               }
             },
-            { "include": "#comments" }
+            {
+              "include": "#comments"
+            }
           ]
         }
       ]
@@ -73,8 +159,13 @@
           "begin": "\"",
           "end": "\"",
           "patterns": [
-            { "name": "constant.character.escape.bwconf", "match": "\\\\." },
-            { "include": "#variables" }
+            {
+              "name": "constant.character.escape.bwconf",
+              "match": "\\\\."
+            },
+            {
+              "include": "#variables"
+            }
           ]
         },
         {

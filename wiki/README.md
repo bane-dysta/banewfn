@@ -39,7 +39,10 @@
 Multiwfn_exec=Multiwfn
 confpath=~/.bane/wfn
 cores=8
+citations_output=references.bib
 ```
+
+输入文件可用 `citations_output=${input}_references.bib` 覆盖默认文件名，或用 `citations_output=off` 关闭自动 BibTeX。
 
 最小脚本示例：
 

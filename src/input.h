@@ -10,7 +10,9 @@ enum class TaskKind {
     Workflow,
     WfnRebase,
     Collect,
-    Builtin
+    Builtin,
+    Citation,
+    CitationOutput
 };
 
 // Single module task information
@@ -45,10 +47,17 @@ struct ModuleTask {
     std::string builtinId;     // user-facing artifact/logical name after the command name
     std::vector<std::string> builtinBody;  // repeated list-like entries, currently op/operator/combine
 
+    // Citation metadata blocks. Citation fields and output options are stored in params.
+    std::string citationId;          // bane.cite <id>
+    std::string citationOutputName;  // bane.citations.write <name>
+    std::string origin;              // e.g. input:workflow.bw:12
+
     bool isWorkflow() const noexcept { return kind == TaskKind::Workflow; }
     bool isWfnRebase() const noexcept { return kind == TaskKind::WfnRebase; }
     bool isCollect() const noexcept { return kind == TaskKind::Collect; }
     bool isBuiltin() const noexcept { return kind == TaskKind::Builtin; }
+    bool isCitation() const noexcept { return kind == TaskKind::Citation; }
+    bool isCitationOutput() const noexcept { return kind == TaskKind::CitationOutput; }
 };
 
 // Execution options
@@ -57,6 +66,8 @@ struct ExecutionOptions {
     bool screen = false;
     bool nogui = false;
     bool noColor = false;
+    std::string citationsOutput;
+    bool citationsOutputSpecified = false;
     std::vector<std::string> extargs;  // Extra arguments to pass to Multiwfn
     std::map<std::string, std::vector<std::string>> customVars;  // Custom variables from command line (supports arrays)
 
@@ -71,6 +82,8 @@ struct ParsedInputFile {
     std::map<std::string, std::vector<std::string>> customVars;
     bool dryrun = false;
     bool nogui = false;
+    std::string citationsOutput;
+    bool citationsOutputSpecified = false;
     bool loaded = false;
 };
 

@@ -33,7 +33,7 @@ TARGET_WINDOWS_BANE = $(BUILD_WINDOWS_DIR)/banewfn.exe
 TARGET_WINDOWS_PACK = $(BUILD_WINDOWS_DIR)/bwpack.exe
 
 # Sources (shared + per-binary)
-COMMON_SOURCES = src/config.cpp src/grep_dsl.cpp src/grep_engine.cpp src/input.cpp src/utils.cpp src/inline_conf.cpp
+COMMON_SOURCES = src/bwpack_support.cpp src/citation.cpp src/config.cpp src/grep_dsl.cpp src/grep_engine.cpp src/input.cpp src/utils.cpp src/inline_conf.cpp
 BANE_SOURCES   = src/banewfn.cpp src/ui.cpp
 PACK_SOURCES   = src/bwpack.cpp
 
@@ -94,7 +94,7 @@ install: linux
 	chmod +x $(INSTALL_BINDIR)/bwpack
 	mkdir -p $(INSTALL_CONFDIR)
 	cp conf/* $(INSTALL_CONFDIR)/
-	@printf 'Multiwfn_exec=%s\nconfpath=%s\ncores=%s\n' "$(MULTIWFN_EXEC)" "$(INSTALL_CONFDIR)" "$(INSTALL_CORES)" > "$(INSTALL_CONFDIR)/banewfn.rc"
+	@printf 'Multiwfn_exec=%s\nconfpath=%s\ncores=%s\ncitations_output=references.bib\n' "$(MULTIWFN_EXEC)" "$(INSTALL_CONFDIR)" "$(INSTALL_CORES)" > "$(INSTALL_CONFDIR)/banewfn.rc"
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

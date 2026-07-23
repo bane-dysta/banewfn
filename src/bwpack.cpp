@@ -3,6 +3,8 @@
 #include <sstream>
 #include <set>
 
+#include "bwpack_support.h"
+#include "citation.h"
 #include "config.h"
 #include "input.h"
 #include "inline_conf.h"
@@ -13,7 +15,7 @@ static void printUsage(const char* prog) {
     std::cout << "Usage: " << prog << " <input.bw> [options]\n\n"
               << "Options:\n"
               << "  -o, --output <file>   Output bw file (default: <input>.bwc)\n"
-              << "  -c, --confdir <dir>   Directory containing module .conf files\n"
+              << "  -c, --confdir <dir>   Directory containing module .conf files and citations.conf\n"
               << "  --rc <banewfn.rc>     Read confpath from banewfn.rc (fallback if --confdir not provided)\n"
               << "  -i, --inplace         Overwrite input file in-place\n"
               << "  -h, --help            Show this help\n";
@@ -151,16 +153,23 @@ int main(int argc, char* argv[]) {
     const std::vector<ModuleTask>& tasks = parsedInput.tasks;
 
     std::set<std::string> modules;
+    bool hasCitationTask = false;
     for (const auto& t : tasks) {
         if (!t.moduleName.empty()) modules.insert(t.moduleName);
+        if (t.isCitation()) hasCitationTask = true;
     }
-    if (modules.empty()) {
-        std::cerr << "Error: No modules found in input file." << std::endl;
+    if (modules.empty() && !hasCitationTask) {
+        std::cerr << "Error: No modules or citation declarations found in input file."
+                  << std::endl;
         return 1;
     }
 
     std::cout << "Modules to bundle: ";
-    for (const auto& m : modules) std::cout << m << " ";
+    if (modules.empty()) {
+        std::cout << "(none)";
+    } else {
+        for (const auto& m : modules) std::cout << m << " ";
+    }
     std::cout << "\n";
 
     // Read each module's conf file
@@ -184,13 +193,66 @@ int main(int argc, char* argv[]) {
         confTexts[m] = txt;
     }
 
-    if (confTexts.empty()) {
+    if (!modules.empty() && confTexts.empty()) {
         std::cerr << "Error: No conf files could be loaded. Nothing to bundle." << std::endl;
         return 1;
     }
 
-    // Strip any existing inline conf blocks from the input file
+    ConfigManager bundledConfigs;
+    for (const auto& conf : confTexts) {
+        std::string origin = confDir;
+        if (!origin.empty() && origin.back() != '/' && origin.back() != '\\') {
+            origin += "/";
+        }
+        origin += conf.first + ".conf";
+        if (!bundledConfigs.loadModuleConfigFromText(conf.first, conf.second, origin)) {
+            std::cerr << "Error: Cannot parse module config for bundling: "
+                      << conf.first << std::endl;
+            return 1;
+        }
+    }
+
+    // Strip any existing inline conf blocks from the input file.
     std::string baseContent = InlineConf::stripInlineConfsFromFile(inputFile);
+
+    // Expand catalog-backed citation declarations so the packed workflow does
+    // not depend on an external citations.conf at runtime.
+    CitationManager citationCatalog;
+    std::string citationCatalogPath = confDir;
+    if (!citationCatalogPath.empty() && citationCatalogPath.back() != '/' &&
+        citationCatalogPath.back() != '\\') {
+        citationCatalogPath += "/";
+    }
+    citationCatalogPath += "citations.conf";
+
+    if (Utils::fileExists(citationCatalogPath) &&
+        !citationCatalog.loadCatalog(citationCatalogPath)) {
+        std::cerr << "Error: Cannot load citation catalog: "
+                  << citationCatalogPath << std::endl;
+        return 1;
+    }
+
+    const Bwpack::CitationExpansionResult citationExpansion =
+        Bwpack::expandCatalogCitations(baseContent, citationCatalog, tasks, inputFile);
+    if (!citationExpansion.success) {
+        return 1;
+    }
+    baseContent = citationExpansion.content;
+    if (citationExpansion.expandedCount > 0) {
+        std::cout << "Expanded " << citationExpansion.expandedCount
+                  << " citation catalog reference(s).\n";
+    }
+
+    const Bwpack::ConfiguredCitationCatalogResult configuredCitationCatalog =
+        Bwpack::buildConfiguredCitationCatalog(
+            citationCatalog, bundledConfigs, tasks, inputFile);
+    if (!configuredCitationCatalog.success) {
+        return 1;
+    }
+    if (configuredCitationCatalog.recordCount > 0) {
+        std::cout << "Bundled " << configuredCitationCatalog.recordCount
+                  << " module-selected citation record(s).\n";
+    }
 
     // Write output
     std::ofstream out(outputFile);
@@ -208,6 +270,11 @@ int main(int argc, char* argv[]) {
     out << "\n";
     out << "# Bundled by bane dysta\n";
     out << "# ConfDir: " << confDir << "\n\n";
+
+    if (!configuredCitationCatalog.catalogText.empty()) {
+        out << InlineConf::formatInlineCitationCatalogBlock(
+            configuredCitationCatalog.catalogText) << "\n";
+    }
 
     for (const auto& kv : confTexts) {
         out << InlineConf::formatInlineConfBlock(kv.first, kv.second) << "\n";

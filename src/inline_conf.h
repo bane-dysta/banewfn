@@ -28,12 +28,20 @@ namespace InlineConf {
 // Returns: moduleName -> confText
 std::map<std::string, std::string> extractInlineConfs(const std::string& filepath);
 
+// Extract the optional bundled citation catalog block from a bw/bwc file.
+// The returned text uses the normal citations.conf syntax.
+std::string extractInlineCitationCatalog(const std::string& filepath);
+
 // Strip any embedded inline conf blocks from file and return the remaining content.
 // It removes everything from the first BEGIN marker to EOF.
 std::string stripInlineConfsFromFile(const std::string& filepath);
 
 // Format a module conf text into an embeddable commented block.
 std::string formatInlineConfBlock(const std::string& moduleName, const std::string& confText);
+
+// Format citations.conf text as a commented block that can be embedded beside
+// inline module configurations.
+std::string formatInlineCitationCatalogBlock(const std::string& catalogText);
 
 } // namespace InlineConf
 

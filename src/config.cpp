@@ -9,6 +9,7 @@
 #include <limits.h>
 #include <cctype>
 #include <algorithm>
+#include <set>
 
 #ifdef PLATFORM_WINDOWS
 #include <windows.h>
@@ -97,6 +98,148 @@ std::string resolveScalarPlaceholderValue(const std::string& varName,
     }
 
     return "";
+}
+
+bool tokenizeCitationBinding(const std::string& line,
+                             std::vector<std::string>& tokens,
+                             std::string& error) {
+    tokens.clear();
+    error.clear();
+
+    std::string current;
+    bool inSingleQuote = false;
+    bool inDoubleQuote = false;
+    bool escaping = false;
+
+    for (char c : line) {
+        if (escaping) {
+            current.push_back(c);
+            escaping = false;
+            continue;
+        }
+
+        if (c == '\\') {
+            escaping = true;
+            continue;
+        }
+
+        if (!inDoubleQuote && c == '\'') {
+            inSingleQuote = !inSingleQuote;
+            continue;
+        }
+        if (!inSingleQuote && c == '"') {
+            inDoubleQuote = !inDoubleQuote;
+            continue;
+        }
+
+        if (!inSingleQuote && !inDoubleQuote &&
+            std::isspace(static_cast<unsigned char>(c))) {
+            if (!current.empty()) {
+                tokens.push_back(current);
+                current.clear();
+            }
+            continue;
+        }
+
+        current.push_back(c);
+    }
+
+    if (escaping) {
+        current.push_back('\\');
+    }
+    if (inSingleQuote || inDoubleQuote) {
+        error = "unterminated quoted value";
+        return false;
+    }
+    if (!current.empty()) {
+        tokens.push_back(current);
+    }
+    return true;
+}
+
+bool parseCitationBinding(const std::string& line,
+                          std::size_t lineNumber,
+                          ConfigCitationBinding& binding,
+                          std::string& error) {
+    binding = ConfigCitationBinding();
+    binding.lineNumber = lineNumber;
+
+    std::vector<std::string> tokens;
+    if (!tokenizeCitationBinding(line, tokens, error)) {
+        return false;
+    }
+    if (tokens.empty()) {
+        error = "empty citation binding";
+        return false;
+    }
+
+    binding.id = Utils::trim(tokens.front());
+    if (binding.id.empty() || binding.id.front() == '@' ||
+        binding.id.find('=') != std::string::npos) {
+        error = "the first field must be a citation id";
+        return false;
+    }
+    if (binding.id.find('$') != std::string::npos) {
+        error = "citation ids must be static";
+        return false;
+    }
+
+    std::set<std::string> seenTargets;
+    bool seenReason = false;
+    for (std::size_t i = 1; i < tokens.size(); ++i) {
+        const std::string token = Utils::trim(tokens[i]);
+        if (token.empty()) {
+            continue;
+        }
+
+        if (token.front() == '@') {
+            if (seenReason) {
+                error = "section selectors must appear before reason=";
+                return false;
+            }
+            const std::string target = Utils::trim(token.substr(1));
+            if (target.empty()) {
+                error = "empty section selector";
+                return false;
+            }
+            if (target.find('$') != std::string::npos) {
+                error = "section selectors must be static";
+                return false;
+            }
+            if (target == "quit" || target == "citations") {
+                error = "citation bindings may target executable sections only";
+                return false;
+            }
+            if (seenTargets.insert(target).second) {
+                binding.targets.push_back(target);
+            }
+            continue;
+        }
+
+        const std::size_t eqPos = token.find('=');
+        if (eqPos == std::string::npos) {
+            error = "expected @section or reason=<text>";
+            return false;
+        }
+
+        const std::string key = Utils::toLowerAscii(Utils::trim(token.substr(0, eqPos)));
+        if (key != "reason") {
+            error = "unknown citation binding field '" + key + "'";
+            return false;
+        }
+        if (seenReason) {
+            error = "reason= may be specified only once";
+            return false;
+        }
+        binding.reason = token.substr(eqPos + 1);
+        seenReason = true;
+    }
+
+    if (binding.targets.empty()) {
+        error = "at least one @section selector is required";
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -192,7 +335,7 @@ bool fileExists(const std::string& filepath) {
 }
 
 // Utility function: find config file with priority
-std::string findConfigFile(const std::string& executablePath) {
+std::string findConfigFile(const std::string& executablePath, bool verbose) {
     std::vector<std::string> searchPaths;
     
     // Priority 1: Current directory
@@ -229,15 +372,19 @@ std::string findConfigFile(const std::string& executablePath) {
     }
 #endif
     
-    std::cout << "Searching for banewfn.rc in the following locations:" << std::endl;
-    for (const auto& path : searchPaths) {
-        std::cout << "  - " << path << std::endl;
+    if (verbose) {
+        std::cout << "Searching for banewfn.rc in the following locations:" << std::endl;
+        for (const auto& path : searchPaths) {
+            std::cout << "  - " << path << std::endl;
+        }
+        std::cout << std::endl;
     }
-    std::cout << std::endl;
     
     for (const auto& path : searchPaths) {
         if (Utils::fileExists(path)) {
-            std::cout << "Found: " << path << std::endl;
+            if (verbose) {
+                std::cout << "Found: " << path << std::endl;
+            }
             return path;
         }
     }
@@ -284,6 +431,8 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile, bool requir
                     std::cerr << "Warning: Invalid cores value in config file: "
                               << value << ". Keeping default: " << config.cores << std::endl;
                 }
+            } else if (key == "citations_output") {
+                config.citationsOutput = expandPath(Utils::trimQuotes(value));
             } else if (key == "gitbash_exec") {
 #ifdef PLATFORM_WINDOWS
                 config.gitbashExec = expandPath(value);
@@ -311,12 +460,17 @@ bool ConfigManager::loadBaneWfnConfig(const std::string& configFile, bool requir
 // Shared parser for module config (from file or inline text)
 bool ConfigManager::parseModuleConfigStream(std::istream& in, const std::string& moduleName, const std::string& origin) {
     ModuleConfig modConfig;
+    modConfig.origin = origin;
     std::string line;
     std::string currentSection;
     bool inDefaultBlock = false;
     bool inQuitSection = false;
+    bool inCitationSection = false;
+    std::size_t lineNumber = 0;
+    bool ok = true;
 
     while (std::getline(in, line)) {
+        ++lineNumber;
         line = Utils::trim(line);
 
         // 去除行内注释
@@ -326,16 +480,53 @@ bool ConfigManager::parseModuleConfigStream(std::istream& in, const std::string&
 
         // Section header [section_name]
         if (line[0] == '[' && line[line.length()-1] == ']') {
-            currentSection = line.substr(1, line.length() - 2);
+            currentSection = Utils::trim(line.substr(1, line.length() - 2));
 
             // Special handling for quit section
             if (currentSection == "quit") {
                 inQuitSection = true;
+                inCitationSection = false;
+                inDefaultBlock = false;
+            } else if (currentSection == "citations") {
+                inQuitSection = false;
+                inCitationSection = true;
                 inDefaultBlock = false;
             } else {
                 modConfig.sections[currentSection] = Section();
                 inQuitSection = false;
+                inCitationSection = false;
                 inDefaultBlock = false;
+            }
+            continue;
+        }
+
+        if (inCitationSection) {
+            if (line == "-default-") {
+                std::cerr << "Error: [citations] does not support -default- at "
+                          << origin << ":" << lineNumber << std::endl;
+                ok = false;
+                continue;
+            }
+
+            ConfigCitationBinding binding;
+            std::string error;
+            if (!parseCitationBinding(line, lineNumber, binding, error)) {
+                std::cerr << "Error: Invalid citation binding at " << origin << ":"
+                          << lineNumber << ": " << error << std::endl;
+                ok = false;
+                continue;
+            }
+
+            const bool duplicate = std::any_of(
+                modConfig.citationBindings.begin(), modConfig.citationBindings.end(),
+                [&](const ConfigCitationBinding& existing) {
+                    return Utils::toLowerAscii(Utils::trim(existing.id)) ==
+                               Utils::toLowerAscii(Utils::trim(binding.id)) &&
+                           existing.targets == binding.targets &&
+                           Utils::trim(existing.reason) == Utils::trim(binding.reason);
+                });
+            if (!duplicate) {
+                modConfig.citationBindings.push_back(binding);
             }
             continue;
         }
@@ -378,8 +569,21 @@ bool ConfigManager::parseModuleConfigStream(std::istream& in, const std::string&
         modConfig.quitCommands.push_back("q");
     }
 
-    moduleConfigs[moduleName] = modConfig;
-    return true;
+    for (const auto& binding : modConfig.citationBindings) {
+        for (const auto& target : binding.targets) {
+            if (modConfig.sections.find(target) == modConfig.sections.end()) {
+                std::cerr << "Error: Citation '" << binding.id << "' at " << origin
+                          << ":" << binding.lineNumber << " targets unknown section ["
+                          << target << "]" << std::endl;
+                ok = false;
+            }
+        }
+    }
+
+    if (ok) {
+        moduleConfigs[moduleName] = modConfig;
+    }
+    return ok;
 }
 
 // Load module-specific conf file

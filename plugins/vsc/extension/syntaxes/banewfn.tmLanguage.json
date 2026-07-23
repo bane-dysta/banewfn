@@ -36,7 +36,7 @@
       "patterns": [
         {
           "name": "keyword.control.directive.inlineconf.banewfn",
-          "match": "^#>>>\\s+BANEWFN_INLINE_CONF_BEGIN.*|^#<<<\\s+BANEWFN_INLINE_CONF_END.*"
+          "match": "^#>>>\\s+BANEWFN_INLINE_(?:CONF|CITATIONS)_BEGIN.*|^#<<<\\s+BANEWFN_INLINE_(?:CONF|CITATIONS)_END.*"
         }
       ]
     },
@@ -51,7 +51,7 @@
     "headers": {
       "patterns": [
         {
-          "match": "^\\s*(wfn|core|dryrun|nogui|wfn_rebase)(=)(.*)",
+          "match": "^\\s*(wfn|core|dryrun|nogui|wfn_rebase|citations_output)\\s*(=)(.*)",
           "captures": {
             "1": {
               "name": "keyword.other.banewfn"
@@ -99,7 +99,7 @@
     "module-params": {
       "patterns": [
         {
-          "match": "^\\s*(?!\\[|%|end\\b|wait\\b|collect\\s*\\(|wfn|core|dryrun|nogui|wfn_rebase)([a-zA-Z0-9_\\-\\+]+)(?:\\s+(.*))?$",
+          "match": "^\\s*(?!\\[|%|end\\b|wait\\b|collect\\s*\\(|wfn|core|dryrun|nogui|wfn_rebase|citations_output)([a-zA-Z0-9_\\-\\+]+)(?:\\s+(.*))?$",
           "captures": {
             "1": {
               "name": "variable.parameter.banewfn"

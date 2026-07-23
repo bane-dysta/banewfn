@@ -16,13 +16,11 @@ std::string UI::getLogoString() {
     logo += u8"  | |_) / ___ \\| |\\  | |___  \\ V  V / |  _| | |\\  |\n";
     logo += u8"  |____/_/   \\_\\_| \\_|_____|  \\_/\\_/  |_|   |_| \\_|\n";
     logo += u8"  Author: Bane Dysta\n";
+    logo += u8"  Version: 1.5.5\n";
     logo += u8"  Feedback: https://github.com/bane-dysta/banewfn\n";
     logo += u8"  Tips: \n";
-    logo += u8"  This program only performs a workflow for Multiwfn, so if you use this program for publication,\n";
-    logo += u8"    you should cite Multiwfn as Prof. Lu mentioned in its manual.\n";
-    logo += u8"  If you would like to cite this program as well, you can use:\n";  
-    logo += u8"    Chiyuan Wei, banewfn, Version 1.4.0, https://github.com/bane-dysta/banewfn (accessed on day month year)\n";
-    logo += u8"    or DOI: 10.5281/zenodo.21407311\n";
+    logo += u8"  Available citation suggestions for BaneWfn, Multiwfn, and declared methods\n";
+    logo += u8"    are printed after workflow execution.\n";
     logo += u8"    \nLet's start Multiwfn analysis!\n";   
     logo += "\n";
     return logo;

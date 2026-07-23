@@ -15,6 +15,7 @@
 #include <system_error>
 #include <unistd.h>
 #include <sys/stat.h>
+#include "citation.h"
 #include "config.h"
 #include "grep_engine.h"
 #include "input.h"
@@ -199,6 +200,16 @@ static bool tasksRequireWavefunction(const std::vector<ModuleTask>& tasks) {
 }
 
 static std::string getTaskDisplayName(const ModuleTask& task) {
+    if (task.isCitation()) {
+        return "bane.cite " + task.citationId;
+    }
+    if (task.isCitationOutput()) {
+        std::string name = "bane.citations.write";
+        if (!task.citationOutputName.empty()) {
+            name += " " + task.citationOutputName;
+        }
+        return name;
+    }
     if (task.isBuiltin()) {
         std::string name = "bane." + task.builtinName;
         if (!task.builtinId.empty()) {
@@ -781,7 +792,9 @@ public:
         return true;
     }
 
-    bool rememberNewFilesSince(const Snapshot& before, const std::string& taskName) {
+    bool rememberNewFilesSince(const Snapshot& before,
+                               const std::string& taskName,
+                               bool replaceExistingOnCollect = false) {
         Snapshot after;
         if (!captureSnapshot(after)) {
             return false;
@@ -792,6 +805,9 @@ public:
             if (before.find(fileName) == before.end()) {
                 if (pendingFiles.insert(fileName).second) {
                     ++addedCount;
+                }
+                if (replaceExistingOnCollect) {
+                    replaceExistingFiles.insert(fileName);
                 }
             }
         }
@@ -817,6 +833,7 @@ public:
             std::cout << "Dry-run mode: collect(" << targetDir
                       << ") skipped; no files were moved." << std::endl;
             pendingFiles.clear();
+            replaceExistingFiles.clear();
             return true;
         }
 
@@ -878,8 +895,17 @@ public:
                 continue;
             }
 
+            const bool mayReplace = replaceExistingFiles.find(fileName) != replaceExistingFiles.end();
             fileEc.clear();
-            if (fs::exists(destPath, fileEc)) {
+            const bool destinationExists = fs::exists(destPath, fileEc);
+            if (fileEc) {
+                std::cerr << "Warning: collect cannot inspect destination "
+                          << destPath.string() << ": " << fileEc.message() << std::endl;
+                remaining.insert(fileName);
+                ok = false;
+                continue;
+            }
+            if (destinationExists && !mayReplace) {
                 std::cerr << "Warning: collect destination already exists, keeping source file: "
                           << destPath.string() << std::endl;
                 remaining.insert(fileName);
@@ -888,10 +914,14 @@ public:
             }
 
             std::string errorMessage;
-            if (moveFile(sourcePath, destPath, errorMessage)) {
+            const bool moved = destinationExists
+                ? replaceFile(sourcePath, destPath, errorMessage)
+                : moveFile(sourcePath, destPath, errorMessage);
+            if (moved) {
                 ++movedCount;
             } else {
-                std::cerr << "Warning: collect failed to move " << fileName << " to "
+                std::cerr << "Warning: collect failed to "
+                          << (destinationExists ? "replace " : "move ") << fileName << " at "
                           << destPath.string() << ": " << errorMessage << std::endl;
                 remaining.insert(fileName);
                 ok = false;
@@ -899,6 +929,13 @@ public:
         }
 
         pendingFiles.swap(remaining);
+        std::set<std::string> remainingReplaceable;
+        for (const auto& fileName : replaceExistingFiles) {
+            if (pendingFiles.find(fileName) != pendingFiles.end()) {
+                remainingReplaceable.insert(fileName);
+            }
+        }
+        replaceExistingFiles.swap(remainingReplaceable);
 
         if (movedCount > 0) {
             printSuccessLine("collect(" + targetDir + "): moved " +
@@ -911,6 +948,58 @@ public:
     }
 
 private:
+    static bool replaceFile(const std::filesystem::path& sourcePath,
+                            const std::filesystem::path& destPath,
+                            std::string& errorMessage) {
+        namespace fs = std::filesystem;
+
+        fs::path tempPath = destPath;
+        tempPath += ".banewfn-citation-tmp";
+        std::error_code ec;
+        for (int suffix = 1; fs::exists(tempPath, ec) && !ec; ++suffix) {
+            tempPath = fs::path(destPath.string() + ".banewfn-citation-tmp-" +
+                                std::to_string(suffix));
+        }
+        if (ec) {
+            errorMessage = "cannot inspect temporary replacement path: " + ec.message();
+            return false;
+        }
+
+        fs::copy_file(sourcePath, tempPath, fs::copy_options::none, ec);
+        if (ec) {
+            errorMessage = "cannot stage replacement: " + ec.message();
+            return false;
+        }
+
+        ec.clear();
+        fs::rename(tempPath, destPath, ec);
+        if (ec) {
+            std::error_code copyEc;
+            fs::copy_file(tempPath, destPath, fs::copy_options::overwrite_existing, copyEc);
+            if (copyEc) {
+                std::error_code cleanupEc;
+                fs::remove(tempPath, cleanupEc);
+                errorMessage = "cannot replace destination: " + copyEc.message();
+                return false;
+            }
+            std::error_code cleanupEc;
+            fs::remove(tempPath, cleanupEc);
+            if (cleanupEc) {
+                errorMessage = "destination replaced but temporary file could not be removed: " +
+                               cleanupEc.message();
+                return false;
+            }
+        }
+
+        ec.clear();
+        fs::remove(sourcePath, ec);
+        if (ec) {
+            errorMessage = "destination replaced but source file could not be removed: " + ec.message();
+            return false;
+        }
+        return true;
+    }
+
     static bool moveFile(const std::filesystem::path& sourcePath,
                          const std::filesystem::path& destPath,
                          std::string& errorMessage) {
@@ -940,19 +1029,267 @@ private:
     }
 
     std::set<std::string> pendingFiles;
+    std::set<std::string> replaceExistingFiles;
 };
 
 class WorkflowRunner {
 private:
     ConfigManager configManager;
+    CitationManager citationManager;
     
 public:
     // Load banewfn.rc configuration file
-    bool loadBaneWfnConfig(const std::string& configFile) {
-        return configManager.loadBaneWfnConfig(configFile);
+    bool loadBaneWfnConfig(const std::string& configFile, bool requireMultiwfnExec = true) {
+        if (!configManager.loadBaneWfnConfig(configFile, requireMultiwfnExec)) {
+            return false;
+        }
+
+        const std::string catalogPath = configManager.getConfig().confPath + "/citations.conf";
+        if (Utils::fileExists(catalogPath) && !citationManager.loadCatalog(catalogPath)) {
+            return false;
+        }
+        return true;
     }
 
 private:
+    static std::vector<std::string> parseCitationAuthors(const std::string& rawAuthors) {
+        std::vector<std::string> authors;
+        for (const auto& author : Utils::split(rawAuthors, ';')) {
+            const std::string cleaned = Utils::trim(author);
+            if (!cleaned.empty()) {
+                authors.push_back(cleaned);
+            }
+        }
+        return authors;
+    }
+
+    static bool buildCitationRecord(const ModuleTask& task,
+                                    CitationRecord& record,
+                                    std::string& reason) {
+        static const std::set<std::string> allowedFields = {
+            "reason", "authors", "title", "journal", "year", "volume",
+            "issue", "pages", "doi", "url", "text"
+        };
+
+        record = CitationRecord();
+        record.id = Utils::trim(task.citationId);
+        reason.clear();
+
+        if (record.id.empty()) {
+            std::cerr << "Error: " << getTaskDisplayName(task)
+                      << " requires a citation id" << std::endl;
+            return false;
+        }
+
+        for (const auto& param : task.params) {
+            const std::string key = Utils::toLowerAscii(Utils::trim(param.first));
+            const std::string value = Utils::trim(param.second);
+            if (allowedFields.find(key) == allowedFields.end()) {
+                std::cerr << "Error: Unknown field '" << param.first << "' in "
+                          << getTaskDisplayName(task) << std::endl;
+                return false;
+            }
+
+            if (key == "reason") reason = value;
+            else if (key == "authors") record.authors = parseCitationAuthors(value);
+            else if (key == "title") record.title = value;
+            else if (key == "journal") record.journal = value;
+            else if (key == "year") record.year = value;
+            else if (key == "volume") record.volume = value;
+            else if (key == "issue") record.issue = value;
+            else if (key == "pages") record.pages = value;
+            else if (key == "doi") record.doi = value;
+            else if (key == "url") record.url = value;
+            else if (key == "text") record.text = value;
+        }
+        return true;
+    }
+
+    bool executeCitationTask(const ModuleTask& task) {
+        CitationRecord record;
+        std::string reason;
+        if (!buildCitationRecord(task, record, reason)) {
+            return false;
+        }
+        const std::string origin = task.origin.empty()
+            ? "input:" + record.id
+            : task.origin;
+
+        const bool hasInlineRecord = !record.authors.empty() || !record.title.empty() ||
+            !record.journal.empty() || !record.year.empty() || !record.volume.empty() ||
+            !record.issue.empty() || !record.pages.empty() || !record.doi.empty() ||
+            !record.url.empty() || !record.text.empty();
+        if (hasInlineRecord) {
+            if (!citationManager.addOrOverride(record, origin)) {
+                return false;
+            }
+        } else if (!citationManager.hasRecord(record.id)) {
+            std::cerr << "Error: " << getTaskDisplayName(task)
+                      << " defines no bibliographic fields and the id is not present in the catalog"
+                      << std::endl;
+            return false;
+        }
+        return citationManager.use(record.id, reason, origin);
+    }
+
+    bool executeCitationOutputTask(const ModuleTask& task) {
+        static const std::set<std::string> allowedFields = {"output", "format"};
+        std::string output;
+        std::string format = "plain";
+        for (const auto& param : task.params) {
+            const std::string key = Utils::toLowerAscii(Utils::trim(param.first));
+            if (allowedFields.find(key) == allowedFields.end()) {
+                std::cerr << "Error: Unknown field '" << param.first << "' in "
+                          << getTaskDisplayName(task) << std::endl;
+                return false;
+            }
+            if (key == "output") {
+                output = Utils::trim(param.second);
+            } else if (key == "format") {
+                format = Utils::toLowerAscii(Utils::trim(param.second));
+            }
+        }
+
+        if (output.empty()) {
+            std::cerr << "Error: " << getTaskDisplayName(task)
+                      << " requires output=<path>" << std::endl;
+            return false;
+        }
+
+        bool ok = false;
+        if (format == "plain") {
+            ok = citationManager.writePlain(output);
+        } else if (format == "bibtex") {
+            ok = citationManager.writeBibTeX(output);
+        } else {
+            std::cerr << "Error: Unsupported citation output format '" << format
+                      << "' (expected plain or bibtex)" << std::endl;
+            return false;
+        }
+
+        if (ok) {
+            printSuccessLine("Citation file written: " + output);
+        }
+        return ok;
+    }
+
+    bool registerSuccessfulSoftwareCitations(const ModuleTask& task) {
+        if ((task.isBuiltin() || taskHasMultiwfnScript(task)) &&
+            citationManager.hasRecord("multiwfn")) {
+            return citationManager.use("multiwfn", "Wavefunction analysis engine",
+                                       "software:multiwfn");
+        }
+        return true;
+    }
+
+    static std::map<std::string, std::string> mergeSectionParams(
+        const Section& section,
+        const std::map<std::string, std::string>& suppliedParams) {
+        std::map<std::string, std::string> result = section.defaults;
+        for (const auto& param : suppliedParams) {
+            if (!param.second.empty()) {
+                result[param.first] = param.second;
+            }
+        }
+        return result;
+    }
+
+    static bool citationTargetsSection(const ConfigCitationBinding& binding,
+                                       const std::string& sectionName) {
+        return std::find(binding.targets.begin(), binding.targets.end(), sectionName) !=
+               binding.targets.end();
+    }
+
+    bool validateConfigCitationsForSection(const std::string& moduleName,
+                                           const std::string& sectionName) const {
+        if (!configManager.hasModuleConfig(moduleName)) {
+            return false;
+        }
+
+        const ModuleConfig& module = configManager.getModuleConfig(moduleName);
+        bool ok = true;
+        for (const auto& binding : module.citationBindings) {
+            if (!citationTargetsSection(binding, sectionName)) {
+                continue;
+            }
+            if (!citationManager.hasRecord(binding.id)) {
+                std::cerr << "Error: Citation id '" << binding.id
+                          << "' required by module " << moduleName << " section ["
+                          << sectionName << "] is not defined (" << module.origin << ":"
+                          << binding.lineNumber << ")" << std::endl;
+                ok = false;
+            }
+        }
+        return ok;
+    }
+
+    bool validateConfiguredCitationsForTask(const ModuleTask& task) const {
+        if (!task.isWorkflow() || task.moduleName.empty()) {
+            return true;
+        }
+
+        bool ok = validateConfigCitationsForSection(task.moduleName, "main");
+        for (const auto& step : task.postProcessSteps) {
+            if (!validateConfigCitationsForSection(task.moduleName, step.first)) {
+                ok = false;
+            }
+        }
+        return ok;
+    }
+
+    bool registerConfigCitationsForSection(
+        const std::string& moduleName,
+        const std::string& sectionName,
+        const std::map<std::string, std::string>& suppliedParams) {
+        if (!configManager.hasModuleConfig(moduleName)) {
+            return false;
+        }
+
+        const ModuleConfig& module = configManager.getModuleConfig(moduleName);
+        const auto sectionIt = module.sections.find(sectionName);
+        if (sectionIt == module.sections.end()) {
+            return true;
+        }
+
+        const std::map<std::string, std::string> finalParams =
+            mergeSectionParams(sectionIt->second, suppliedParams);
+        bool ok = true;
+        for (const auto& binding : module.citationBindings) {
+            if (!citationTargetsSection(binding, sectionName)) {
+                continue;
+            }
+
+            std::string reason = Utils::trim(
+                replacePlaceholders(binding.reason, finalParams));
+            if (reason.empty()) {
+                reason = moduleName + " section [" + sectionName + "]";
+            }
+
+            const std::string origin = "config:" + module.origin + ":" +
+                std::to_string(binding.lineNumber) + " @" + sectionName;
+            if (!citationManager.use(binding.id, reason, origin)) {
+                ok = false;
+            }
+        }
+        return ok;
+    }
+
+    bool registerSuccessfulConfigCitations(const ModuleTask& task) {
+        if (!task.isWorkflow() || task.moduleName.empty()) {
+            return true;
+        }
+
+        bool ok = registerConfigCitationsForSection(
+            task.moduleName, "main", task.params);
+        for (const auto& step : task.postProcessSteps) {
+            if (!registerConfigCitationsForSection(
+                    task.moduleName, step.first, step.second)) {
+                ok = false;
+            }
+        }
+        return ok;
+    }
+
     // Load module-specific conf file
     bool loadModuleConfig(const std::string& moduleName) {
         return configManager.loadModuleConfig(moduleName);
@@ -1801,6 +2138,29 @@ private:
         return success;
     }
     
+    static bool citationOutputDisabled(const std::string& value) {
+        const std::string normalized = Utils::toLowerAscii(Utils::trim(value));
+        return normalized.empty() || normalized == "off" || normalized == "none" ||
+               normalized == "false" || normalized == "0" || normalized == "disabled";
+    }
+
+    static bool hasExplicitCitationOutputTask(const std::vector<ModuleTask>& tasks) {
+        return std::any_of(tasks.begin(), tasks.end(),
+                           [](const ModuleTask& task) { return task.isCitationOutput(); });
+    }
+
+    static std::string resolveAutomaticCitationOutput(
+        const std::string& outputTemplate,
+        const std::string& wfnFile,
+        const std::map<std::string, std::vector<std::string>>& vars) {
+        ModuleTask outputTask;
+        outputTask.kind = TaskKind::CitationOutput;
+        outputTask.params["output"] = outputTemplate;
+        std::vector<ModuleTask> resolvedTasks = {outputTask};
+        InputParser::applyPlaceholderReplacement(resolvedTasks, wfnFile, vars);
+        return Utils::trim(resolvedTasks.front().params["output"]);
+    }
+
 public:
     // Execute a fully resolved workflow. CLI/input/config precedence is handled once
     // by main; this class only expands and runs the resulting task plan.
@@ -1810,6 +2170,17 @@ public:
             return false;
         }
 
+        std::string automaticCitationOutput;
+        if (!hasExplicitCitationOutputTask(tasks)) {
+            automaticCitationOutput = options.citationsOutputSpecified
+                ? options.citationsOutput
+                : configManager.getConfig().citationsOutput;
+            if (citationOutputDisabled(automaticCitationOutput)) {
+                automaticCitationOutput.clear();
+            }
+        }
+        std::set<std::string> automaticCitationOutputPaths;
+
         const bool requiresWavefunction = tasksRequireWavefunction(tasks);
         std::vector<std::string> wfnFiles;
         if (wfnPattern.empty()) {
@@ -1818,7 +2189,7 @@ public:
                           << std::endl;
                 return false;
             }
-            // Standalone %grep/%command workflows deliberately execute once
+            // Workflows without Multiwfn tasks deliberately execute once
             // with an empty wavefunction context.
             wfnFiles.push_back("");
         } else {
@@ -1890,6 +2261,18 @@ public:
             std::cout << "\n** SCREEN MODE: Output to screen instead of files **\n" << std::endl;
         }
 
+        const std::string inlineCitationCatalog =
+            InlineConf::extractInlineCitationCatalog(inpFile);
+        if (!inlineCitationCatalog.empty()) {
+            if (!citationManager.loadCatalogFromText(
+                    inlineCitationCatalog, inpFile + " (inline citations)")) {
+                std::cerr << "Error: Failed to load inline citation catalog from "
+                          << inpFile << std::endl;
+                return false;
+            }
+            std::cout << "\nDetected inline citation catalog.\n";
+        }
+
         // Try to load embedded inline conf blocks (if any)
         std::map<std::string, std::string> inlineConfs = InlineConf::extractInlineConfs(inpFile);
         if (!inlineConfs.empty()) {
@@ -1916,6 +2299,12 @@ public:
                     return false;
                 }
             }
+        }
+
+        if (citationManager.hasRecord("banewfn") &&
+            !citationManager.use("banewfn", "Workflow execution and orchestration",
+                                 "software:banewfn")) {
+            return false;
         }
         
         // 对每个匹配的文件和每个变量组合执行任务
@@ -1968,6 +2357,7 @@ public:
                 // Logical artifacts produced by builtin DSL blocks in this file/variable iteration.
                 // They allow follow-up blocks such as grid=like(complex_den) to refer to earlier output.
                 std::map<std::string, std::string> builtinArtifacts;
+                bool iterationSuccess = true;
 
                 // Track files only for tasks that have a later collect(...)
                 // directive. This keeps workflows without collect unchanged and
@@ -1987,6 +2377,7 @@ public:
                     if (task.isCollect()) {
                         if (!collector.flushToDirectory(task.collectDir, options.dryrun)) {
                             allSuccess = false;
+                            iterationSuccess = false;
                         }
                         continue;
                     }
@@ -2016,21 +2407,60 @@ public:
                     }
 
                     bool taskSuccess = false;
-                    if (task.isBuiltin()) {
+                    if (task.isCitation()) {
+                        taskSuccess = executeCitationTask(task);
+                    } else if (task.isCitationOutput()) {
+                        taskSuccess = executeCitationOutputTask(task);
+                    } else if (task.isBuiltin()) {
                         taskSuccess = executeBuiltinTask(task, currentWfnFile, cores, options, builtinArtifacts);
                     } else {
-                        taskSuccess = executeModuleTask(task, currentWfnFile, cores, options);
+                        if (validateConfiguredCitationsForTask(task)) {
+                            taskSuccess = executeModuleTask(task, currentWfnFile, cores, options);
+                        }
                     }
 
                     if (!taskSuccess) {
                         allSuccess = false;
+                        iterationSuccess = false;
+                    } else if (!task.isCitation() && !task.isCitationOutput()) {
+                        const bool configCitationsOk =
+                            registerSuccessfulConfigCitations(task);
+                        const bool softwareCitationsOk =
+                            registerSuccessfulSoftwareCitations(task);
+                        if (!configCitationsOk || !softwareCitationsOk) {
+                            allSuccess = false;
+                            iterationSuccess = false;
+                        }
                     }
 
                     if (shouldTrackNewFiles &&
-                        !collector.rememberNewFilesSince(beforeFiles, getTaskDisplayName(task))) {
+                        !collector.rememberNewFilesSince(beforeFiles, getTaskDisplayName(task),
+                                                           task.isCitationOutput())) {
                         allSuccess = false;
+                        iterationSuccess = false;
                     }
                 }
+
+                if (iterationSuccess && !automaticCitationOutput.empty()) {
+                    const std::string outputPath = resolveAutomaticCitationOutput(
+                        automaticCitationOutput, finalWfnFile, currentVars);
+                    if (outputPath.empty()) {
+                        std::cerr << "Error: citations_output resolved to an empty path" << std::endl;
+                        allSuccess = false;
+                    } else {
+                        automaticCitationOutputPaths.insert(outputPath);
+                    }
+                }
+            }
+        }
+
+        if (allSuccess && citationManager.usedCitationCount() > 0) {
+            for (const auto& outputPath : automaticCitationOutputPaths) {
+                if (!citationManager.writeBibTeX(outputPath)) {
+                    allSuccess = false;
+                    break;
+                }
+                printSuccessLine("Automatic BibTeX file written: " + outputPath);
             }
         }
         
@@ -2038,6 +2468,11 @@ public:
             std::cout << "\nAll done." << std::endl;
         } else {
             printFailureLine("Some modules execution failed");
+        }
+
+        if (citationManager.usedCitationCount() > 0) {
+            std::cout << std::endl;
+            citationManager.printSummary(std::cout);
         }
         
         return allSuccess;
@@ -2050,7 +2485,7 @@ void printUsage(const char* progName) {
     std::cout << "Hmm... You need some advice? No problem, Bane will help you! :)\n";
     std::cout << "Usage: " << progName << " <input.inp> <molecule.fchk> [options]\n";
     std::cout << "       " << progName << " -w <molecule.fchk> <input.inp> [options]\n";
-    std::cout << "       " << progName << " <input.inp> [options]  # standalone %grep/%command\n";
+    std::cout << "       " << progName << " <input.inp> [options]  # standalone citation/%grep/%command\n";
     std::cout << "\nOptions:\n";
     std::cout << "  -l, --list          List available module conf names or show a conf summary\n";
     std::cout << "  -c, --cores <num>   Specify the number of CPU cores to use\n";
@@ -2070,6 +2505,8 @@ void printUsage(const char* progName) {
     std::cout << "  %raw ... end/wait   Send literal Multiwfn commands\n";
     std::cout << "  %grep ... end       Extract text/records from the current output or from <file>\n";
     std::cout << "  collect(dir);       Move files newly created by preceding blocks into dir\n";
+    std::cout << "  bane.cite id { ... }             Declare a workflow citation\n";
+    std::cout << "  bane.citations.write id { ... }  Write plain or BibTeX citations\n";
     std::cout << "  bane.cube.make id { ... }     Generate cube data via Multiwfn main function 5\n";
     std::cout << "  bane.line.profile id { ... }  Preload an interactive 1D line profile via main function 3\n";
     std::cout << "  bane.plane.map id { ... }     Generate/export a 2D plane map via main function 4\n";
@@ -2165,6 +2602,12 @@ int main(int argc, char* argv[]) {
                     // scan commands for $ placeholders
                     for (const auto &cmdLine : section.commands) {
                         collectPlaceholderNames(cmdLine, vars);
+                    }
+                    for (const auto& binding : mc.citationBindings) {
+                        if (std::find(binding.targets.begin(), binding.targets.end(),
+                                      sectionName) != binding.targets.end()) {
+                            collectPlaceholderNames(binding.reason, vars);
+                        }
                     }
 
                     // Print section and variables aligned in two columns (first column fixed width)
@@ -2287,6 +2730,8 @@ int main(int argc, char* argv[]) {
     const auto& inputVars = parsedInput.customVars;
     bool inputDryrun = parsedInput.dryrun;
     bool inputNogui = parsedInput.nogui;
+    options.citationsOutput = parsedInput.citationsOutput;
+    options.citationsOutputSpecified = parsedInput.citationsOutputSpecified;
     const bool requiresWavefunction = tasksRequireWavefunction(parsedInput.tasks);
 
     if (inputDryrun) {
@@ -2316,7 +2761,7 @@ int main(int argc, char* argv[]) {
     } else if (positionalArgs.size() >= 2) {
         wfnFile = positionalArgs[1];
     } else if (inputWfnFile.empty()) {
-        // Standalone %grep/%command workflows do not need a wavefunction file.
+        // Workflows without Multiwfn tasks do not need a wavefunction file.
         if (requiresWavefunction) {
             wfnFile = UI::requestWavefunctionFile();
         }
@@ -2328,11 +2773,12 @@ int main(int argc, char* argv[]) {
     
     WorkflowRunner runner;
     
-    // Multiwfn/module workflows need banewfn.rc. Standalone %grep/%command
-    // workflows are intentionally self-contained and can run without it.
-    if (requiresWavefunction) {
-        std::string configFile = findConfigFile(argv[0]);
-        if (configFile.empty()) {
+    // Multiwfn/module workflows require banewfn.rc. Standalone workflows load
+    // it opportunistically so that a global citations_output default can still
+    // apply, while retaining the historical ability to run without an rc file.
+    const std::string configFile = findConfigFile(argv[0], requiresWavefunction);
+    if (configFile.empty()) {
+        if (requiresWavefunction) {
             std::cerr << "Error: Could not find banewfn.rc in any of the search locations" << std::endl;
             std::cerr << "Please create the config file in one of the following locations:" << std::endl;
             std::cerr << "  - Current directory: ./banewfn.rc" << std::endl;
@@ -2341,10 +2787,9 @@ int main(int argc, char* argv[]) {
             pauseIfWindowsDryRun(shouldPauseOnExit);
             return 1;
         }
-        if (!runner.loadBaneWfnConfig(configFile)) {
-            pauseIfWindowsDryRun(shouldPauseOnExit);
-            return 1;
-        }
+    } else if (!runner.loadBaneWfnConfig(configFile, requiresWavefunction)) {
+        pauseIfWindowsDryRun(shouldPauseOnExit);
+        return 1;
     }
     
     // If cores not specified, use input file setting or default value from banewfn.rc

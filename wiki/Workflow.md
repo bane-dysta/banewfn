@@ -9,7 +9,7 @@
 理解 BaneWfn 的执行顺序，对编写稳定脚本非常重要。总体上，程序会先解析输入并判断任务依赖，再完成变量与文件展开，最后进入逐轮执行。其标准流程如下：
 
 1. 程序首先解析输入文件，读取 `wfn`、`core`、`dryrun`、`nogui` 等头部保留项，以及自定义变量、任务块和 `wfn_rebase` / `collect` 指令。
-2. 程序检查任务是否需要 Multiwfn。module、builtin、`%raw` 与 `%preraw` 需要波函数和 `banewfn.rc`；只有独立 `%grep` / `%command` 的工作流不读取 rc，也不要求波函数文件。
+2. 程序检查任务是否需要 Multiwfn。module、builtin、`%raw` 与 `%preraw` 需要波函数和 `banewfn.rc`；仅含 citation、独立 `%grep` / `%command` 与 `collect(...)` 的工作流不要求 rc 或波函数；发现 rc 时仍会读取 `citations_output` 与引用目录配置。
 3. 输入文件中的任务块会被整理为内部任务序列，包括 module、builtin、独立 `%raw` / `%preraw`、`%grep`、`%command` 与 `collect(dir);`。
 4. 程序合并命令行变量与文件中的自定义变量；若存在 `var=?`、`var*=?` 或 `len(var)=?` 形式的交互式变量，则在运行时提示用户输入。
 5. 对于实际引用到的模块，程序先检查输入文件末尾是否包含对应 inline conf；若存在则优先加载内嵌配置，否则从 `confpath` 读取外部 `.conf`。

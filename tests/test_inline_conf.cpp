@@ -25,4 +25,28 @@ TEST_CASE("format extract and strip inline conf blocks round-trip correctly") {
     CHECK(InlineConf::stripInlineConfsFromFile(scriptFile.string()) == prefix);
 }
 
+TEST_CASE("inline citation catalog round-trips beside module configs") {
+    TempDir temp;
+    const auto scriptFile = temp.path() / "workflow.bwc";
+
+    const std::string prefix = "wfn=test.fchk\n[weak]\nend\n";
+    const std::string catalog =
+        "[johnson2010]\n"
+        "title = \"NCI method\"\n"
+        "doi = \"10.1234/nci\"\n";
+    const std::string citationBlock =
+        InlineConf::formatInlineCitationCatalogBlock(catalog);
+    const std::string weakBlock =
+        InlineConf::formatInlineConfBlock("weak", "[main]\n20\n");
+
+    writeTextFile(scriptFile, prefix + citationBlock + weakBlock);
+
+    CHECK(InlineConf::extractInlineCitationCatalog(scriptFile.string()) ==
+          "# bundled citation catalog\n" + catalog);
+    const auto confs = InlineConf::extractInlineConfs(scriptFile.string());
+    REQUIRE(confs.size() == 1);
+    CHECK(confs.at("weak") == "# bundled module: weak\n[main]\n20\n");
+    CHECK(InlineConf::stripInlineConfsFromFile(scriptFile.string()) == prefix);
+}
+
 } // TEST_SUITE("InlineConf")

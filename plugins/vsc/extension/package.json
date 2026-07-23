@@ -2,7 +2,7 @@
   "name": "banewfn-syntax",
   "displayName": "BaneWfn Syntax",
   "description": "Syntax highlighting and workflow tools for BaneWfn (.bw/.bwc).",
-  "version": "1.2.0",
+  "version": "1.5.0",
   "publisher": "bane-dysta",
   "engines": {
     "vscode": "^1.80.0"
@@ -67,7 +67,7 @@
       },
       {
         "command": "banewfn.packCurrent",
-        "title": "BaneWfn: Pack Current Script",
+        "title": "BaneWfn: Pack or Repack Current Script",
         "icon": {
           "light": "media/package-light.svg",
           "dark": "media/package-dark.svg"
@@ -91,7 +91,7 @@
         },
         {
           "command": "banewfn.packCurrent",
-          "when": "resourceExtname == .bw",
+          "when": "resourceExtname == .bw || resourceExtname == .bwc",
           "group": "navigation@2"
         },
         {
@@ -108,7 +108,7 @@
         },
         {
           "command": "banewfn.packCurrent",
-          "when": "resourceExtname == .bw",
+          "when": "resourceExtname == .bw || resourceExtname == .bwc",
           "group": "navigation@2"
         },
         {

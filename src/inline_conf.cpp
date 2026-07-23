@@ -8,6 +8,8 @@ namespace InlineConf {
 
 static const char* kBeginTag = "BANEWFN_INLINE_CONF_BEGIN";
 static const char* kEndTag   = "BANEWFN_INLINE_CONF_END";
+static const char* kCitationBeginTag = "BANEWFN_INLINE_CITATIONS_BEGIN";
+static const char* kCitationEndTag   = "BANEWFN_INLINE_CITATIONS_END";
 
 static bool parseMarker(const std::string& trimmed, const char* arrow, const char* tag,
                         std::string* outModule) {
@@ -91,6 +93,33 @@ std::map<std::string, std::string> extractInlineConfs(const std::string& filepat
     return result;
 }
 
+std::string extractInlineCitationCatalog(const std::string& filepath) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        return "";
+    }
+
+    bool inBlock = false;
+    std::stringstream buf;
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::string trimmed = Utils::trim(line);
+        if (!inBlock) {
+            if (parseMarker(trimmed, "#>>>", kCitationBeginTag, nullptr)) {
+                inBlock = true;
+            }
+            continue;
+        }
+
+        if (parseMarker(trimmed, "#<<<", kCitationEndTag, nullptr)) {
+            return buf.str();
+        }
+        buf << stripOneLeadingComment(line) << "\n";
+    }
+
+    return inBlock ? buf.str() : std::string();
+}
+
 std::string stripInlineConfsFromFile(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
@@ -102,7 +131,8 @@ std::string stripInlineConfsFromFile(const std::string& filepath) {
     while (std::getline(file, line)) {
         std::string trimmed = Utils::trim(line);
         std::string mod;
-        if (parseMarker(trimmed, "#>>>", kBeginTag, &mod)) {
+        if (parseMarker(trimmed, "#>>>", kBeginTag, &mod) ||
+            parseMarker(trimmed, "#>>>", kCitationBeginTag, nullptr)) {
             // Stop copying anything from first inline-conf block.
             break;
         }
@@ -125,6 +155,21 @@ std::string formatInlineConfBlock(const std::string& moduleName, const std::stri
     }
 
     out << "#<<< " << kEndTag << " " << moduleName << "\n";
+    return out.str();
+}
+
+std::string formatInlineCitationCatalogBlock(const std::string& catalogText) {
+    std::stringstream out;
+    out << "#>>> " << kCitationBeginTag << "\n";
+    out << "## bundled citation catalog\n";
+
+    std::stringstream ss(catalogText);
+    std::string line;
+    while (std::getline(ss, line)) {
+        out << "# " << line << "\n";
+    }
+
+    out << "#<<< " << kCitationEndTag << "\n";
     return out.str();
 }
 

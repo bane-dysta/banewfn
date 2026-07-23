@@ -7,7 +7,7 @@
 #endif
 
 #define MyAppName "Banewfn"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.5.5"
 #define MyAppPublisher "Bane Dysta"
 #define MyAppURL "https://github.com/bane-dysta/banewfn"
 #define MyAppExeName "banewfn.exe"
@@ -200,4 +200,5 @@ begin
   SaveStringToFile(RCFile, 'gitbash_exec='     + BashPath     + #13#10, True);
   SaveStringToFile(RCFile, 'confpath='     + ConfPath     + #13#10, True);
   SaveStringToFile(RCFile, 'cores='        + CoresValue   + #13#10, True);
+  SaveStringToFile(RCFile, 'citations_output=references.bib' + #13#10, True);
 end;

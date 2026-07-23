@@ -42,7 +42,7 @@ banewfn <input.inp> [options]  # 独立 %grep / %command
 2. 输入文件头部 `core=`
 3. `banewfn.rc` 中的 `cores`
 
-独立 `%grep` / `%command` 不读取 `banewfn.rc`；未指定核心数时内部使用 1。对于需要临时提高 Multiwfn 并行度的场景，直接使用 `-c` 即可，无需改动脚本本身。
+独立 citation / `%grep` / `%command` 工作流在没有 `banewfn.rc` 时仍可运行；发现 rc 时会读取 `citations_output` 与引用目录配置，未指定核心数时内部使用 1。
 
 ### 变量来源规则
 
@@ -67,7 +67,7 @@ banewfn <input.inp> [options]  # 独立 %grep / %command
 
 ## `bwpack`
 
-`bwpack` 用于把输入文件中实际引用到的外部模块配置打包到同一文件末尾，生成自包含的 `.bwc` 脚本。它的重点不是执行工作流，而是整理交付形式。
+`bwpack` 用于把输入文件中实际引用到的模块配置写入文件末尾，并打包显式引用与模块自动引用所需的目录记录，生成自包含的 `.bwc` 脚本。它的重点不是执行工作流，而是整理交付形式。
 
 ### 基本用法
 
@@ -81,16 +81,18 @@ bwpack <input.bw> [options]
 | --- | --- |
 | `-h`, `--help` | 显示帮助。 |
 | `-o`, `--output <file>` | 输出文件名；默认把输入扩展名替换为 `.bwc`。 |
-| `-c`, `--confdir <dir>` | 显式指定模块配置目录。 |
+| `-c`, `--confdir <dir>` | 指定模块 `.conf` 与 `citations.conf` 所在目录。 |
 | `--rc <banewfn.rc>` | 从给定 rc 读取 `confpath`。 |
 | `-i`, `--inplace` | 原地覆盖输入文件。 |
 
 ### `bwpack` 的行为
 
-- 先解析输入文件，找出其中实际使用到的模块名；
-- 逐个读取对应 `.conf` 文本；
+- 解析输入文件，找出实际使用到的模块名和 `bane.cite` 声明；
+- 逐个读取对应的模块 `.conf`；
+- 从 `citations.conf` 读取匹配记录，并把目录型引用展开为完整内联 `bane.cite`；
+- 根据模块 `[citations]` 绑定筛选本次流程需要的文献，并写入内联引用目录；
 - 去除原文件中已有的 inline conf 尾块；
-- 在文件末尾追加新的打包块。
+- 在文件末尾追加新的内联引用目录和模块打包块。
 
 如果你的目标是把脚本发给别人、存档到项目目录，或者减少“缺少 conf 文件”造成的环境问题，那么 `bwpack` 通常是交付前最后一步非常值得做的整理工作。
 

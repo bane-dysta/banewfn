@@ -1,5 +1,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
+#include <cstddef>
 #include <string>
 #include <map>
 #include <vector>
@@ -18,10 +19,22 @@ struct Section {
     std::map<std::string, std::string> defaults;
 };
 
+// A citation catalog entry bound to one or more executable sections in a
+// module configuration. Bindings are declared in the reserved [citations]
+// metadata section and are never emitted as Multiwfn commands.
+struct ConfigCitationBinding {
+    std::string id;
+    std::vector<std::string> targets;
+    std::string reason;
+    std::size_t lineNumber = 0;
+};
+
 // Module configuration structure
 struct ModuleConfig {
     std::map<std::string, Section> sections;
     std::vector<std::string> quitCommands;  // Quit command sequence
+    std::vector<ConfigCitationBinding> citationBindings;
+    std::string origin;
 };
 
 // Global configuration structure
@@ -30,6 +43,7 @@ struct BaneWfnConfig {
     std::string confPath;
     int cores;
     std::string gitbashExec;  // Git Bash executable path (Windows only)
+    std::string citationsOutput;  // Automatic BibTeX output path template; empty disables it
 
     BaneWfnConfig() : cores(0) {}
 };
@@ -39,7 +53,7 @@ std::string trim(const std::string& str);
 std::string expandPath(const std::string& path);
 std::string getExecutableDir();
 bool fileExists(const std::string& filepath);
-std::string findConfigFile(const std::string& executablePath);
+std::string findConfigFile(const std::string& executablePath, bool verbose = true);
 std::string getBaseName(const std::string& filepath);
 std::string replacePlaceholders(const std::string& cmd, 
                                const std::map<std::string, std::string>& params);

@@ -81,7 +81,9 @@ bool tryParseBuiltinStart(const std::string& trimmedLine, std::string& builtinNa
         return false;
     }
 
-    const size_t openBrace = line.find('{');
+    // Use the final opening brace so placeholders such as ${name} remain
+    // valid in the optional block id.
+    const size_t openBrace = line.find_last_of('{');
     if (openBrace == std::string::npos) {
         return false;
     }
@@ -143,7 +145,7 @@ bool parseBuiltinBlockLine(const std::string& trimmedLine, ModuleTask& task) {
     }
 
     value = Utils::trimQuotes(value);
-    if (isBuiltinListParamKey(key)) {
+    if (task.isBuiltin() && isBuiltinListParamKey(key)) {
         task.builtinBody.push_back(Utils::toLowerAscii(key) + "=" + value);
     } else {
         task.params[key] = value;
@@ -441,6 +443,15 @@ void InputParser::applyPlaceholderReplacement(std::vector<ModuleTask>& tasks, co
                 bodyLine = replaceInputPlaceholders(bodyLine, wfnFile, customVars);
             }
         }
+
+        if (task.isCitation()) {
+            task.citationId = replaceInputPlaceholders(task.citationId, wfnFile, customVars);
+        }
+
+        if (task.isCitationOutput()) {
+            task.citationOutputName = replaceInputPlaceholders(
+                task.citationOutputName, wfnFile, customVars);
+        }
         
         // Apply replacement to post-processing step parameters
         for (auto& step : task.postProcessSteps) {
@@ -620,6 +631,8 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
     std::map<std::string, std::vector<std::string>>& customVars = parsed.customVars;
     bool& dryrun = parsed.dryrun;
     bool& nogui = parsed.nogui;
+    std::string& citationsOutput = parsed.citationsOutput;
+    bool& citationsOutputSpecified = parsed.citationsOutputSpecified;
 
     std::ifstream file(inpFile);
     if (!file.is_open()) {
@@ -653,7 +666,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
     };
 
     auto hasPendingTask = [&]() {
-        return currentTask.isBuiltin() || !currentTask.moduleName.empty() || !currentTask.commands.empty() ||
+        return !currentTask.isWorkflow() || !currentTask.moduleName.empty() || !currentTask.commands.empty() ||
                !currentTask.preRawCommands.empty() || !currentTask.rawCommands.empty() ||
                !currentTask.grepRules.empty() || !currentTask.grepErrors.empty();
     };
@@ -903,6 +916,19 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             continue;
         }
 
+        // Optional per-workflow override for the automatic BibTeX file declared
+        // in banewfn.rc. Use off/none/false/0 to disable it for this input file.
+        if (tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode &&
+            !inPreRawMode && !inRawMode && !inGrepMode) {
+            const std::size_t headerEq = trimmed.find('=');
+            if (headerEq != std::string::npos &&
+                Utils::trim(trimmed.substr(0, headerEq)) == "citations_output") {
+                citationsOutput = Utils::trimQuotes(Utils::trim(trimmed.substr(headerEq + 1)));
+                citationsOutputSpecified = true;
+                continue;
+            }
+        }
+
         // Special directive: wfn_rebase=xxx
         // It can appear between blocks to switch the file provided to subsequent Multiwfn tasks.
         // Only recognized when not inside any module/%process/%command.
@@ -929,7 +955,8 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
                 
                 // Only accept if key is valid and not a special keyword
                 if (VariableSyntax::isValidCustomVariableName(key) && !key.empty() && key != "wfn" && key != "core" &&
-                    key != "wfn_rebase" && key != "dryrun" && key != "nogui") {
+                    key != "wfn_rebase" && key != "dryrun" && key != "nogui" &&
+                    key != "citations_output") {
                     if (VariableSyntax::isListVariableName(key)) {
                         customVars[key] = {value};
                     } else if (VariableSyntax::isLengthVariableName(key)) {
@@ -953,10 +980,19 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
                     tasks.push_back(currentTask);
                 }
                 currentTask = ModuleTask();
-                currentTask.kind = TaskKind::Builtin;
-                currentTask.builtinName = builtinName;
-                currentTask.builtinId = builtinId;
-                currentTask.blockIndex = moduleBlockCounters["builtin:" + builtinName]++;
+                if (builtinName == "cite") {
+                    currentTask.kind = TaskKind::Citation;
+                    currentTask.citationId = builtinId;
+                } else if (builtinName == "citations.write") {
+                    currentTask.kind = TaskKind::CitationOutput;
+                    currentTask.citationOutputName = builtinId;
+                } else {
+                    currentTask.kind = TaskKind::Builtin;
+                    currentTask.builtinName = builtinName;
+                    currentTask.builtinId = builtinId;
+                }
+                currentTask.origin = "input:" + inpFile + ":" + std::to_string(inputLineNumber);
+                currentTask.blockIndex = moduleBlockCounters["bane:" + builtinName]++;
                 inBuiltinMode = true;
                 inProcessMode = false;
                 inCommandMode = false;

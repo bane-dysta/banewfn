@@ -222,17 +222,20 @@ async function packCurrent(uri) {
   if (!document) {
     return;
   }
-  const ext = path.extname(document.uri.fsPath).toLowerCase();
-  if (ext !== '.bw') {
-    vscode.window.showWarningMessage('bwpack is intended for .bw source files.');
-    return;
-  }
 
+  const inputFile = document.uri.fsPath;
+  const ext = path.extname(inputFile).toLowerCase();
+  const repackInPlace = ext === '.bwc';
   const bwpackPath = resolveCommandPath(getConfig().get('bwpackPath', 'bwpack').trim() || 'bwpack', document);
-  const outputFile = replaceExtension(document.uri.fsPath, '.bwc');
   const confPath = getConfig().get('confPath', '').trim();
   const rcPath = getConfig().get('rcPath', '').trim();
-  const args = [document.uri.fsPath, '--output', outputFile];
+  const args = [inputFile];
+
+  if (repackInPlace) {
+    args.push('--inplace');
+  } else {
+    args.push('--output', replaceExtension(inputFile, '.bwc'));
+  }
 
   if (confPath) {
     args.push('--confdir', resolveLocalPath(confPath, document));
@@ -240,8 +243,13 @@ async function packCurrent(uri) {
     args.push('--rc', resolveLocalPath(rcPath, document));
   }
 
-  await runProcessTask(`Pack ${path.basename(document.uri.fsPath)}`, bwpackPath, args, getCwdForDocument(document), document);
-  vscode.window.setStatusBarMessage(`BaneWfn: packing to ${path.basename(outputFile)}`, 4000);
+  const action = repackInPlace ? 'Repack' : 'Pack';
+  await runProcessTask(`${action} ${path.basename(inputFile)}`, bwpackPath, args, getCwdForDocument(document), document);
+
+  const status = repackInPlace
+    ? `BaneWfn: repacking ${path.basename(inputFile)} in place`
+    : `BaneWfn: packing to ${path.basename(replaceExtension(inputFile, '.bwc'))}`;
+  vscode.window.setStatusBarMessage(status, 4000);
 }
 
 async function openRelatedConf(uri) {

@@ -1,6 +1,8 @@
 add_executable(banewfn_tests
     test_main.cpp
     test_utils.cpp
+    test_citation.cpp
+    test_bwpack.cpp
     test_config.cpp
     test_grep.cpp
     test_input.cpp
@@ -20,3 +22,10 @@ set_target_properties(banewfn_tests PROPERTIES
 )
 
 add_test(NAME banewfn_unit_tests COMMAND $<TARGET_FILE:banewfn_tests>)
+
+add_test(
+    NAME banewfn_auto_citations_cli
+    COMMAND ${CMAKE_COMMAND}
+        -DBANEWFN_EXE=$<TARGET_FILE:banewfn>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_auto_citations.cmake
+)

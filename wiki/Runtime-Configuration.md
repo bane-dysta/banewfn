@@ -20,12 +20,13 @@
 
 ### 主要结构
 
-尽管文件扩展名是 `rc`，但 `banewfn.rc` 的实际格式更接近简单的 `key=value` 配置文件。它主要负责告诉程序“Multiwfn 在哪里”“模块配置目录在哪里”“默认并行数是多少”，以及在 Windows 下是否需要通过 Git Bash 执行 bash 风格命令块。一个最小可用示例如下：
+尽管文件扩展名是 `rc`，但 `banewfn.rc` 的实际格式更接近简单的 `key=value` 配置文件。它用于配置 Multiwfn 路径、模块目录、默认并行数、自动引用文件名，以及 Windows 下的 Git Bash 路径。一个最小可用示例如下：
 
 ```ini
 Multiwfn_exec=Multiwfn
 confpath=~/.bane/wfn
 cores=8
+citations_output=references.bib
 # Windows 可选
 # gitbash_exec="C:\Program Files\Git\bin\bash.exe"
 ```
@@ -35,6 +36,7 @@ cores=8
 - `Multiwfn_exec`：必需。用于指定 Multiwfn 可执行文件路径或命令名，并支持 `~`、`$HOME`、`${HOME}` 等主目录写法。
 - `confpath`：可选。用于指定模块 `.conf` 所在目录；未设置时默认使用 `~/.bane/wfn`。
 - `cores`：可选。用于指定默认核心数；命令行 `-c` 和输入头 `core=` 都可以覆盖它。
+- `citations_output`：可选。指定工作流成功结束后自动写出的 BibTeX 路径模板；安装默认值为 `references.bib`。输入文件头部的同名字段优先，设为 `off` 可对单个工作流关闭。支持 `${input}` 与自定义变量。
 - `gitbash_exec`：可选。仅在 Windows 下使用；当 `%command` 首行为 `#!/bin/bash` 时，程序会通过这里指定的 Git Bash 去执行命令块。
 
 从职责划分看，`banewfn.rc` 更像是“运行环境配置”，而不是某个具体工作流的组成部分。也正因为如此，建议把它看作机器级配置，而把项目相关变量放在 `.bw/.inp` 脚本中维护。
@@ -47,7 +49,7 @@ cores=8
 2. 可执行文件所在目录：`<exe_dir>/banewfn.rc`
 3. 用户目录：`~/.bane/wfn/banewfn.rc`
 
-当主程序找不到该文件时会终止运行。`bwpack` 在未显式指定 `--confdir` 时，也会尝试使用同一查找顺序；若仍未找到配置，则回退到 `~/.bane/wfn` 作为默认配置目录。
+包含 Multiwfn 任务的工作流找不到该文件时会终止。仅包含 citation 元数据、`%grep`、`%command` 与 `collect(...)` 的工作流可在没有 rc 的情况下运行。`bwpack` 在未显式指定 `--confdir` 时也使用同一查找顺序；若仍未找到配置，则回退到 `~/.bane/wfn` 作为默认配置目录。
 
 如果你想在某个项目中临时覆盖全局配置，只需要把一个项目专用的 `banewfn.rc` 放到当前目录即可，而不必修改用户目录下的通用配置。
 
@@ -59,6 +61,21 @@ cores=8
 - 单引号或双引号内部的 `#` 会保留为字面字符，尽管路径里不会有#号。
 - 在引号外写 `\#` 可以保留字面 `#`，能在banewfn.rc里用到这个的也是属于神人了。
 - `~`、`$HOME` 和 `${HOME}` 会在配置读取时展开为用户主目录。
+
+### 自动 BibTeX 输出优先级
+
+```ini
+# banewfn.rc
+citations_output=references.bib
+```
+
+单个 `.bw/.bwc` 可在头部覆盖：
+
+```ini
+citations_output=${input}_references.bib
+```
+
+`citations_output=off` 关闭该文件的自动导出。若工作流包含显式 `bane.citations.write`，显式任务取得最高优先级，程序不会再额外写默认 BibTeX。
 
 ## 配置文件
 
@@ -76,6 +93,9 @@ cores=8
 [process2_name]
 命令序列...
 
+[citations]
+文献与 section 的绑定关系...
+
 [quit]
 退出命令序列...
 ```
@@ -84,6 +104,7 @@ cores=8
 
 - `[main]`：进入模块主逻辑时固定追加的 Multiwfn 命令序列；
 - `[process_name]`：供 `%process` 中某一步调用的命令序列；
+- `[citations]`：把 `citations.conf` 中的文献绑定到实际执行的 section；
 - `[quit]`：任务以 `end` 收尾时自动追加的退出序列。
 
 ### 模板参数与占位符
@@ -125,6 +146,26 @@ count 3
 3. 模板内 `${name:-default}` 写法提供的内联默认值。
 
 这种设计使得 `.conf` 可以保持通用，而具体脚本只需要按需覆盖少数参数。通常建议把“模块作者认为合理的默认值”写进模板默认值，把“项目级差异化参数”留给输入文件传入。
+
+### 模块自动引用
+
+`[citations]` 是模块配置中的引用元数据块，不会作为 Multiwfn 命令执行。每行格式如下：
+
+```text
+<citation-id> @<section> [@<section> ...] [reason=<text>]
+```
+
+例如：
+
+```ini
+[citations]
+weak-common @main reason="Weak-interaction analysis framework"
+johnson2010 @nci @rdg reason="NCI analysis with grid ${grid:-2}"
+```
+
+`@main` 表示模块公共引用；普通选择器只在 `%process` 实际调用对应 section 时生效。多个选择器是“任一匹配即登记”的关系。`reason` 使用目标 section 的参数与默认值展开；同一文献的多个用途会在最终引用摘要中合并。
+
+引用 id 和 section 选择器必须是静态文本，目标 section 必须存在。`[quit]` 与 `[citations]` 不能作为目标。选中的引用会在模块任务执行前检查，并在任务完整成功后登记。使用 `bane.cite` 补充目录记录时，应把该声明放在对应模块任务之前。
 
 ### 约定与建议
 

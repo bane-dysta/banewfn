@@ -44,8 +44,8 @@ BaneWfn 的价值不在于增加新的计算功能，而在于把已有分析能
 
 理解 BaneWfn 的执行顺序，对编写稳定脚本非常重要。总体上，程序会先解析输入并判断任务依赖，再完成变量与文件展开，最后进入逐轮执行。其标准流程如下：
 
-1. 程序首先解析输入文件，读取 `wfn`、`core`、`dryrun`、`nogui` 等头部保留项，以及自定义变量、任务块和 `wfn_rebase` / `collect` 指令。
-2. 程序检查任务是否需要 Multiwfn。module、builtin、`%raw` 与 `%preraw` 需要波函数和 `banewfn.rc`；只有独立 `%grep` / `%command` 的工作流不读取 rc，也不要求波函数文件。
+1. 程序首先解析输入文件，读取 `wfn`、`core`、`dryrun`、`nogui`、`citations_output` 等头部保留项，以及自定义变量、任务块和 `wfn_rebase` / `collect` 指令。
+2. 程序检查任务是否需要 Multiwfn。module、builtin、`%raw` 与 `%preraw` 需要波函数和 `banewfn.rc`；仅含 citation、独立 `%grep` / `%command` 与 `collect(...)` 的工作流不要求 rc 或波函数；发现 rc 时仍会读取 `citations_output` 与引用目录配置。
 3. 输入文件中的任务块会被整理为内部任务序列，包括 module、builtin、独立 `%raw` / `%preraw`、`%grep`、`%command` 与 `collect(dir);`。
 4. 程序合并命令行变量与文件中的自定义变量；若存在 `var=?`、`var*=?` 或 `len(var)=?` 形式的交互式变量，则在运行时提示用户输入。
 5. 对于实际引用到的模块，程序先检查输入文件末尾是否包含对应 inline conf；若存在则优先加载内嵌配置，否则从 `confpath` 读取外部 `.conf`。
@@ -179,12 +179,13 @@ ctest --test-dir build --output-on-failure
 
 ### 主要结构
 
-尽管文件扩展名是 `rc`，但 `banewfn.rc` 的实际格式更接近简单的 `key=value` 配置文件。它主要负责告诉程序“Multiwfn 在哪里”“模块配置目录在哪里”“默认并行数是多少”，以及在 Windows 下是否需要通过 Git Bash 执行 bash 风格命令块。一个最小可用示例如下：
+尽管文件扩展名是 `rc`，但 `banewfn.rc` 的实际格式更接近简单的 `key=value` 配置文件。它用于配置 Multiwfn 路径、模块目录、默认并行数、自动引用文件名，以及 Windows 下的 Git Bash 路径。一个最小可用示例如下：
 
 ```ini
 Multiwfn_exec=Multiwfn
 confpath=~/.bane/wfn
 cores=8
+citations_output=references.bib
 # Windows 可选
 # gitbash_exec="C:\Program Files\Git\bin\bash.exe"
 ```
@@ -194,6 +195,7 @@ cores=8
 - `Multiwfn_exec`：必需。用于指定 Multiwfn 可执行文件路径或命令名，并支持 `~`、`$HOME`、`${HOME}` 等主目录写法。
 - `confpath`：可选。用于指定模块 `.conf` 所在目录；未设置时默认使用 `~/.bane/wfn`。
 - `cores`：可选。用于指定默认核心数；命令行 `-c` 和输入头 `core=` 都可以覆盖它。
+- `citations_output`：可选。指定工作流成功结束后自动写出的 BibTeX 路径模板。输入文件头部的同名字段优先；设为 `off` 可关闭当前文件的自动导出。
 - `gitbash_exec`：可选。仅在 Windows 下使用；当 `%command` 首行为 `#!/bin/bash` 时，程序会通过这里指定的 Git Bash 去执行命令块。
 
 从职责划分看，`banewfn.rc` 更像是“运行环境配置”，而不是某个具体工作流的组成部分。也正因为如此，建议把它看作机器级配置，而把项目相关变量放在 `.bw/.inp` 脚本中维护。
@@ -206,7 +208,7 @@ cores=8
 2. 可执行文件所在目录：`<exe_dir>/banewfn.rc`
 3. 用户目录：`~/.bane/wfn/banewfn.rc`
 
-当主程序找不到该文件时会终止运行。`bwpack` 在未显式指定 `--confdir` 时，也会尝试使用同一查找顺序；若仍未找到配置，则回退到 `~/.bane/wfn` 作为默认配置目录。
+包含 Multiwfn 任务的工作流找不到该文件时会终止。仅包含 citation 元数据、`%grep`、`%command` 与 `collect(...)` 的工作流可在没有 rc 的情况下运行。`bwpack` 在未显式指定 `--confdir` 时也使用同一查找顺序；若仍未找到配置，则回退到 `~/.bane/wfn` 作为默认配置目录。
 
 如果你想在某个项目中临时覆盖全局配置，只需要把一个项目专用的 `banewfn.rc` 放到当前目录即可，而不必修改用户目录下的通用配置。
 
@@ -373,6 +375,7 @@ wfn=*.fchk
 core=8
 dryrun=on
 nogui=true
+citations_output=${input}_references.bib
 wfn_rebase=next.fchk
 ```
 
@@ -384,6 +387,7 @@ wfn_rebase=next.fchk
 | `core=<N>` | 当前脚本默认核心数。 |
 | `dryrun=<bool>` | 设为真时启用测试运行。 |
 | `nogui=<bool>` | 设为真时向 Multiwfn 启动命令追加 `-silent`。 |
+| `citations_output=<path>` | 覆盖 `banewfn.rc` 中的自动 BibTeX 路径；设为 `off` 可关闭当前工作流的自动导出。 |
 
 其中，`wfn_rebase=<path>` 比较特殊。它不是单纯的文件头配置，而是一个可以出现在块间的流程指令，用于临时切换后续块使用的输入文件。
 
@@ -400,7 +404,7 @@ answer=?
 相关规则如下：
 
 - 变量名只能包含字母、数字和下划线；
-- 如前所述，`wfn`、`core`、`wfn_rebase`、`dryrun`、`nogui` 不能作为自定义变量名；
+- 如前所述，`wfn`、`core`、`wfn_rebase`、`dryrun`、`nogui`、`citations_output` 不能作为自定义变量名；
 - 变量值不可留空；若希望运行时询问，请使用 `?`；
 - 从可维护性角度出发，建议把自定义变量集中写在文件头部，而不要零散分布在任务之间。
 
@@ -1042,18 +1046,21 @@ inline conf 允许把模块配置直接嵌入输入文件末尾，从而把原�
 
 ## `bwpack` 打包规则
 
-`bwpack` 用于把输入文件中**实际引用到的模块配置**打包到文件末尾，生成自包含的 `.bwc` 脚本。其行为可以概括如下：
+`bwpack` 用于把输入文件依赖的模块配置和引用目录记录写入同一个 `.bwc` 脚本。其行为可以概括如下：
 
-- 先解析输入文件，找出其中实际使用到的模块名；
-- 再逐个读取对应 `.conf` 文本；
+- 解析输入文件，找出实际使用到的模块名和 `bane.cite` 声明；
+- 逐个读取对应的模块 `.conf`；
+- 从 `citations.conf` 读取匹配记录，把目录型 `bane.cite` 改写为完整内联声明；
 - 去除原文件中已有的 inline conf 尾块；
-- 最后在文件末尾追加新的 `#>>> BANEWFN_INLINE_CONF_BEGIN ...` / `#<<< ...` 打包块。
+- 在文件末尾追加新的 `#>>> BANEWFN_INLINE_CONF_BEGIN ...` / `#<<< ...` 打包块。
 
 Note：
 
-- 纯 `%raw` / `%command` 脚本不依赖配置文件，无需过bwpack包装；
+- 仅含 `bane.cite`、没有传统模块的工作流也可以打包，此时输出不包含模块 inline conf；
+- 纯 `%raw` / `%command` 脚本不依赖配置文件，无需使用 `bwpack`；
 - 输入文件中的 inline conf 应置于文件末尾；重新打包时，旧 inline conf 尾块会被整体替换；
-- `bwpack` 只打包**脚本实际引用到的模块**，不会把整个 `confpath` 目录无差别塞进输出文件。
+- `bwpack` 只读取脚本实际引用到的模块和文献，不会把整个 `confpath` 目录写入输出文件；
+- reason-only 引用在 `citations.conf` 中没有对应 id 时，打包终止。
 
 # 命令行工具
 
@@ -1095,7 +1102,7 @@ banewfn <input.inp> [options]  # 独立 %grep / %command
 2. 输入文件头部 `core=`
 3. `banewfn.rc` 中的 `cores`
 
-独立 `%grep` / `%command` 不读取 `banewfn.rc`；未指定核心数时内部使用 1。对于需要临时提高 Multiwfn 并行度的场景，直接使用 `-c` 即可，无需改动脚本本身。
+独立 citation / `%grep` / `%command` 工作流在没有 `banewfn.rc` 时仍可运行；发现 rc 时会读取 `citations_output` 与引用目录配置，未指定核心数时内部使用 1。
 
 ### 变量来源规则
 
@@ -1118,9 +1125,14 @@ banewfn <input.inp> [options]  # 独立 %grep / %command
 
 对于维护模块库的人来说，`-l` 是一个非常实用的“快速自查”入口。它可以帮助你确认某个模块是否存在、有哪些 section、参数大致是什么，而不必每次都手工打开 `.conf` 文件通读。
 
+### 自动 BibTeX 输出
+
+`banewfn.rc` 可设置 `citations_output=references.bib`。成功完成工作流并登记至少一条引用后，程序自动写出 BibTeX。输入文件头部的 `citations_output` 覆盖 rc；`off`、`none`、`false`、`0` 或 `disabled` 关闭自动导出。显式 `bane.citations.write` 优先级最高，并抑制默认文件。
+
+
 ## `bwpack`
 
-`bwpack` 用于把输入文件中实际引用到的外部模块配置打包到同一文件末尾，生成自包含的 `.bwc` 脚本。它的重点不是执行工作流，而是整理交付形式。
+`bwpack` 用于把输入文件中实际引用到的模块配置写入文件末尾，并把引用目录记录展开到 `bane.cite` 块中，生成自包含的 `.bwc` 脚本。它的重点不是执行工作流，而是整理交付形式。
 
 ### 基本用法
 
@@ -1134,16 +1146,17 @@ bwpack <input.bw> [options]
 | --- | --- |
 | `-h`, `--help` | 显示帮助。 |
 | `-o`, `--output <file>` | 输出文件名；默认把输入扩展名替换为 `.bwc`。 |
-| `-c`, `--confdir <dir>` | 显式指定模块配置目录。 |
+| `-c`, `--confdir <dir>` | 指定模块 `.conf` 与 `citations.conf` 所在目录。 |
 | `--rc <banewfn.rc>` | 从给定 rc 读取 `confpath`。 |
 | `-i`, `--inplace` | 原地覆盖输入文件。 |
 
 ### `bwpack` 的行为
 
-- 先解析输入文件，找出其中实际使用到的模块名；
-- 逐个读取对应 `.conf` 文本；
+- 解析输入文件，找出实际使用到的模块名和 `bane.cite` 声明；
+- 逐个读取对应的模块 `.conf`；
+- 从 `citations.conf` 读取匹配记录，并把目录型引用展开为完整内联 `bane.cite`；
 - 去除原文件中已有的 inline conf 尾块；
-- 在文件末尾追加新的打包块。
+- 在文件末尾追加新的模块打包块。
 
 如果你的目标是把脚本发给别人、存档到项目目录，或者减少“缺少 conf 文件”造成的环境问题，那么 `bwpack` 通常是交付前最后一步非常值得做的整理工作。
 

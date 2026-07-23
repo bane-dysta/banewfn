@@ -84,6 +84,7 @@ wfn=*.fchk
 core=8
 dryrun=on
 nogui=true
+citations_output=${input}_references.bib
 wfn_rebase=next.fchk
 ```
 
@@ -95,6 +96,7 @@ wfn_rebase=next.fchk
 | `core=<N>` | 当前脚本默认核心数。 |
 | `dryrun=<bool>` | 设为真时启用测试运行。 |
 | `nogui=<bool>` | 设为真时向 Multiwfn 启动命令追加 `-silent`。 |
+| `citations_output=<path>` | 覆盖 `banewfn.rc` 中的自动 BibTeX 路径；设为 `off` 可关闭当前工作流的自动导出。 |
 
 其中，`wfn_rebase=<path>` 比较特殊。它不是单纯的文件头配置，而是一个可以出现在块间的流程指令，用于临时切换后续块使用的输入文件。
 
@@ -111,7 +113,7 @@ answer=?
 相关规则如下：
 
 - 变量名只能包含字母、数字和下划线；
-- 如前所述，`wfn`、`core`、`wfn_rebase`、`dryrun`、`nogui` 不能作为自定义变量名；
+- 如前所述，`wfn`、`core`、`wfn_rebase`、`dryrun`、`nogui`、`citations_output` 不能作为自定义变量名；
 - 变量值不可留空；若希望运行时询问，请使用 `?`；
 - 从可维护性角度出发，建议把自定义变量集中写在文件头部，而不要零散分布在任务之间。
 
