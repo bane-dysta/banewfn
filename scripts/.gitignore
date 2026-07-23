@@ -1,4 +1,3 @@
-bat
 release/*
 !release/
 !release/cmake.sh

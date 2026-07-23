@@ -13,11 +13,23 @@
 \usepackage{float}
 \usepackage{graphicx}
 
+
+% 行内代码样式：用于 Markdown 反引号 `code`。
+% 不使用 \colorbox：单个颜色盒不能跨行，会让长行内代码越过页边界。
+% filters/inline-code-breaks.lua 会在标点与固定长度处插入不可见断点。
+\definecolor{InlineCodeText}{HTML}{6F42C1}
+\DeclareRobustCommand{\texttt}[1]{%
+  \begingroup
+  \textcolor{InlineCodeText}{\ttfamily\bfseries #1}%
+  \endgroup
+}
+
 \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,commandchars=\\\{\}}
 \fvset{fontsize=\small,breaklines=true,breakanywhere=true}
 \setlist{nosep}
 \setlength{\parindent}{2em}
 \setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{2em}
 \renewcommand{\arraystretch}{1.2}
 \captionsetup{font=small}
 

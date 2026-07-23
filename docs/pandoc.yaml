@@ -7,6 +7,9 @@ wrap: none
 highlight-style: tango
 include-in-header:
   - preamble.tex
+filters:
+  - filters/table-widths.lua
+  - filters/inline-code-breaks.lua
 variables:
   documentclass: ctexart
   classoption:
