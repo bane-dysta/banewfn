@@ -63,6 +63,7 @@ struct ModuleTask {
 // Execution options
 struct ExecutionOptions {
     bool dryrun = false;
+    bool debug = false;
     bool screen = false;
     bool nogui = false;
     bool noColor = false;
@@ -81,6 +82,7 @@ struct ParsedInputFile {
     int cores = -1;
     std::map<std::string, std::vector<std::string>> customVars;
     bool dryrun = false;
+    bool debug = false;
     bool nogui = false;
     std::string citationsOutput;
     bool citationsOutputSpecified = false;

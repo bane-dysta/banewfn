@@ -630,6 +630,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
     int& cores = parsed.cores;  // -1 means not specified
     std::map<std::string, std::vector<std::string>>& customVars = parsed.customVars;
     bool& dryrun = parsed.dryrun;
+    bool& debug = parsed.debug;
     bool& nogui = parsed.nogui;
     std::string& citationsOutput = parsed.citationsOutput;
     bool& citationsOutputSpecified = parsed.citationsOutputSpecified;
@@ -910,6 +911,12 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
             continue;
         }
 
+        // Check for debug=on/true format at the beginning of file
+        if (trimmed.find("debug=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode && !inGrepMode) {
+            tryParseInputBoolFlag(trimmed.substr(6), "debug", debug);
+            continue;
+        }
+
         // Check for nogui=on/true format at the beginning of file
         if (trimmed.find("nogui=") == 0 && tasks.empty() && currentTask.moduleName.empty() && !inProcessMode && !inCommandMode && !inPreRawMode && !inRawMode && !inGrepMode) {
             tryParseInputBoolFlag(trimmed.substr(6), "nogui", nogui);
@@ -955,7 +962,7 @@ ParsedInputFile InputParser::parseInpFileDetailed(const std::string& inpFile) {
                 
                 // Only accept if key is valid and not a special keyword
                 if (VariableSyntax::isValidCustomVariableName(key) && !key.empty() && key != "wfn" && key != "core" &&
-                    key != "wfn_rebase" && key != "dryrun" && key != "nogui" &&
+                    key != "wfn_rebase" && key != "dryrun" && key != "debug" && key != "nogui" &&
                     key != "citations_output") {
                     if (VariableSyntax::isListVariableName(key)) {
                         customVars[key] = {value};

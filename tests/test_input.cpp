@@ -48,11 +48,43 @@ end
     CHECK(parsed.loaded);
     CHECK(parsed.wfnFile == "demo.fchk");
     CHECK(parsed.cores == 2);
+    CHECK_FALSE(parsed.debug);
     REQUIRE(parsed.tasks.size() == 1);
     CHECK(parsed.tasks[0].moduleName == "demo");
 
     ParsedInputFile missing = InputParser::parseInpFileDetailed((temp.path() / "missing.inp").string());
     CHECK_FALSE(missing.loaded);
+}
+
+TEST_CASE("parse debug header as a reserved boolean with false default") {
+    TempDir temp;
+    const auto enabledFile = temp.path() / "debug_enabled.bw";
+    const auto disabledFile = temp.path() / "debug_disabled.bwc";
+
+    writeTextFile(enabledFile, R"(debug=true
+prefix=debug-run
+
+%command
+echo test
+end
+)");
+    writeTextFile(disabledFile, R"(debug=false
+
+%command
+echo test
+end
+)");
+
+    const ParsedInputFile enabled = InputParser::parseInpFileDetailed(enabledFile.string());
+    REQUIRE(enabled.loaded);
+    CHECK(enabled.debug);
+    CHECK(enabled.customVars.count("debug") == 0);
+    CHECK(enabled.customVars.at("prefix").at(0) == "debug-run");
+
+    const ParsedInputFile disabled = InputParser::parseInpFileDetailed(disabledFile.string());
+    REQUIRE(disabled.loaded);
+    CHECK_FALSE(disabled.debug);
+    CHECK(disabled.customVars.count("debug") == 0);
 }
 
 

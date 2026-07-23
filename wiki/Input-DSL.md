@@ -83,6 +83,7 @@ end
 wfn=*.fchk
 core=8
 dryrun=on
+debug=false
 nogui=true
 citations_output=${input}_references.bib
 wfn_rebase=next.fchk
@@ -95,6 +96,7 @@ wfn_rebase=next.fchk
 | `wfn=<path-or-pattern>` | 当前脚本默认的波函数文件或通配符模式。 |
 | `core=<N>` | 当前脚本默认核心数。 |
 | `dryrun=<bool>` | 设为真时启用测试运行。 |
+| `debug=<bool>` | 默认为 `false`；设为真时保留执行生成的临时命令/脚本文件，并在流程结束后等待用户按任意键退出。 |
 | `nogui=<bool>` | 设为真时向 Multiwfn 启动命令追加 `-silent`。 |
 | `citations_output=<path>` | 覆盖 `banewfn.rc` 中的自动 BibTeX 路径；设为 `off` 可关闭当前工作流的自动导出。 |
 

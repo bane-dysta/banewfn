@@ -36,7 +36,7 @@ python3 scripts/validate_bwc.py final.bwc
 
 - Put `wfn=...` first. Use `wfn=*.fchk` for most orbital, density, surface, excitation, and charge workflows; `wfn=*.cub` for cube-to-plane plotting; `wfn=*.xyz` for NICS template workflows.
 - Add `core=N` only when the workflow is compute-heavy or the user requested it.
-- Put custom variables after headers, e.g. `state=(1 2)`, `plane=?`, `ring=?`, `frag1=?`, `frag2=?`.
+- Put reserved headers first (`wfn`, `core`, `dryrun`, `debug`, `nogui`), then custom variables such as `state=(1 2)`, `plane=?`, `ring=?`, `frag1=?`, and `frag2=?`.
 - Use arrays for repeated states and interactive `?` for required geometry/fragment choices.
 
 ### Module blocks

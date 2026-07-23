@@ -445,6 +445,7 @@ end
 wfn=*.fchk
 core=8
 dryrun=on
+debug=false
 nogui=true
 citations_output=${input}_references.bib
 wfn_rebase=next.fchk
@@ -457,6 +458,7 @@ wfn_rebase=next.fchk
 | `wfn=<path-or-pattern>` | 当前脚本默认的波函数文件或通配符模式。 |
 | `core=<N>` | 当前脚本默认核心数。 |
 | `dryrun=<bool>` | 设为真时启用测试运行。 |
+| `debug=<bool>` | 默认为 `false`；设为真时保留执行生成的临时命令/脚本文件，并在流程结束后等待用户按任意键退出。 |
 | `nogui=<bool>` | 设为真时向 Multiwfn 启动命令追加 `-silent`。 |
 | `citations_output=<path>` | 覆盖 `banewfn.rc` 中的自动 BibTeX 路径；设为 `off` 可关闭当前工作流的自动导出。 |
 
@@ -767,7 +769,7 @@ collect(results);
 
 去重顺序固定如下：有 DOI 时，去掉 `doi:`、`https://doi.org/`、`http://dx.doi.org/` 等前缀并转为小写后按 DOI 去重；没有 DOI 时，按小写后的 citation id 去重。相同文献的多条 `reason` 会合并显示。
 
-### 高层实空间 builtin：`bane.cube.make` / `bane.line.profile` / `bane.plane.map`
+### built-in 高层实空间函数
 
 除传统 `[module]` 块外，BaneWfn 还内置了三类面向 Multiwfn 主功能 3/4/5 的高层 DSL。它们不依赖外部 `.conf` 模板，而是直接描述“从波函数采样某种实空间函数”的意图：
 

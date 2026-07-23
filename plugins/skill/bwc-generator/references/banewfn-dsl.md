@@ -43,7 +43,7 @@ wait
 
 - `wfn=<path-or-pattern>` selects input files. Command-line `-w/--wfn` overrides it.
 - `core=<N>` selects cores. Command-line `-c/--cores` overrides it.
-- `dryrun=true/on` and `nogui=true/on` are recognized before tasks.
+- `dryrun=true/on`, `debug=true/on`, and `nogui=true/on` are recognized before tasks. `debug` defaults to `false`; when enabled, execution command/script files are retained and the runner waits for any key before exit.
 - Custom variables use `key=value`; variable names contain letters, digits, and `_` only.
 - Arrays like `state=(1 2 3)` create repeated workflow rounds. File loop is outer, variable loop is inner.
 - Interactive variables use `name=?`, e.g. `plane=?` or `ring=?`.

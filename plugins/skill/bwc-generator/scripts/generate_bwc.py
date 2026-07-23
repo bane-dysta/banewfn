@@ -139,7 +139,7 @@ def _format_header(header) -> List[str]:
     if header is None:
         return []
     if isinstance(header, dict):
-        order = ["wfn", "core", "dryrun", "nogui"]
+        order = ["wfn", "core", "dryrun", "debug", "nogui"]
         lines = []
         for key in order:
             if key in header:

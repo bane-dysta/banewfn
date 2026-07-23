@@ -15,6 +15,9 @@
 #include <system_error>
 #include <unistd.h>
 #include <sys/stat.h>
+#ifndef _WIN32
+#include <termios.h>
+#endif
 #include "citation.h"
 #include "config.h"
 #include "grep_engine.h"
@@ -32,6 +35,7 @@
 #endif
 #include <windows.h>
 #include <io.h>
+#include <conio.h>
 #endif
 
 namespace {
@@ -175,15 +179,63 @@ static std::string buildMultiwfnInvocation(const std::string& multiwfnExec,
     return cmd.str();
 }
 
-static void pauseIfWindowsDryRun(bool shouldPause) {
+static void waitForAnyKeyToExit() {
+    std::cout << "\nDebug mode: Press any key to exit..." << std::flush;
+
 #ifdef _WIN32
-    if (shouldPause) {
+    HANDLE inputHandle = GetStdHandle(STD_INPUT_HANDLE);
+    if (inputHandle != INVALID_HANDLE_VALUE && inputHandle != nullptr) {
+        FlushConsoleInputBuffer(inputHandle);
+    }
+    _getch();
+#else
+    if (isatty(STDIN_FILENO)) {
+        termios originalMode{};
+        if (tcgetattr(STDIN_FILENO, &originalMode) == 0) {
+            termios singleKeyMode = originalMode;
+            singleKeyMode.c_lflag &= static_cast<tcflag_t>(~(ICANON | ECHO));
+            tcflush(STDIN_FILENO, TCIFLUSH);
+            if (tcsetattr(STDIN_FILENO, TCSANOW, &singleKeyMode) == 0) {
+                char key = '\0';
+                const ssize_t ignored = read(STDIN_FILENO, &key, 1);
+                (void)ignored;
+                tcsetattr(STDIN_FILENO, TCSANOW, &originalMode);
+                std::cout << std::endl;
+                return;
+            }
+        }
+    }
+
+    std::cin.get();
+#endif
+
+    std::cout << std::endl;
+}
+
+static void pauseBeforeExit(const ExecutionOptions& options) {
+    if (options.debug) {
+        waitForAnyKeyToExit();
+        return;
+    }
+
+#ifdef _WIN32
+    if (options.dryrun) {
         std::cout << std::flush;
         system("pause");
     }
 #else
-    (void)shouldPause;
+    (void)options;
 #endif
+}
+
+static void cleanUpExecutionTempFile(const std::string& fileName,
+                                     const ExecutionOptions& options) {
+    if (options.debug) {
+        std::cout << "Debug mode: Keeping temporary file: " << fileName << std::endl;
+        return;
+    }
+
+    remove(fileName.c_str());
 }
 
 static bool taskHasMultiwfnScript(const ModuleTask& task) {
@@ -1450,7 +1502,7 @@ private:
         
         // Clean up command file only if not in dryrun mode
         if (!options.dryrun) {
-            remove(cmdFileName.c_str());
+            cleanUpExecutionTempFile(cmdFileName, options);
         }
         
         if (result == 0) {
@@ -1706,8 +1758,8 @@ private:
                 result = 1;
             }
             
-            // Clean up shell script
-            remove(scriptFileName.c_str());
+            // Clean up shell script unless debug mode keeps execution artifacts.
+            cleanUpExecutionTempFile(scriptFileName, options);
         } else {
             // Use default batch script
             scriptFileName += ".bat";
@@ -1730,8 +1782,8 @@ private:
             
             result = system(cmd.str().c_str());
             
-            // Clean up batch file
-            remove(scriptFileName.c_str());
+            // Clean up batch file unless debug mode keeps execution artifacts.
+            cleanUpExecutionTempFile(scriptFileName, options);
         }
         
 #else
@@ -1762,8 +1814,8 @@ private:
         
         int result = system(cmd.str().c_str());
         
-        // Clean up shell script
-        remove(scriptFileName.c_str());
+        // Clean up shell script unless debug mode keeps execution artifacts.
+        cleanUpExecutionTempFile(scriptFileName, options);
 #endif
         
         if (result == 0) {
@@ -2054,7 +2106,7 @@ private:
             std::cout << "Executing command: " << cmd.str() << std::endl;
             std::cout << "Starting Multiwfn process..." << std::endl;
             int result = system(cmd.str().c_str());
-            remove(cmdFileName.c_str());
+            cleanUpExecutionTempFile(cmdFileName, options);
             success = (result == 0);
             if (success) {
                 printSuccessLine("Builtin " + getTaskDisplayName(task) + " execution completed.");
@@ -2498,7 +2550,7 @@ void printUsage(const char* progName) {
     std::cout << "  -v, --var <key=val> Set custom variable for placeholder replacement (can be used multiple times)\n";
     std::cout << "  -h, --help          Show this help message\n";
     std::cout << "\nInput header reserved words:\n";
-    std::cout << "  wfn=..., core=..., dryrun=on/true, nogui=on/true, wfn_rebase=...\n";
+    std::cout << "  wfn=..., core=..., dryrun=on/true, debug=false/true, nogui=on/true, wfn_rebase=...\n";
     std::cout << "\nInput block hints:\n";
     std::cout << "  %command ... end    Run shell/batch post-commands\n";
     std::cout << "  %preraw ... end/wait Send literal Multiwfn commands before [main]\n";
@@ -2519,7 +2571,7 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " -w molecule.fchk input.inp -d -s -c 8\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -v myvar=value -v other=123\n";
     std::cout << "  " << progName << " input.inp molecule.fchk -e \"-silent -nt 4\"\n";
-    std::cout << "  # input.inp header: dryrun=on, nogui=on\n";
+    std::cout << "  # input.inp header: dryrun=on, debug=true, nogui=on\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -2721,7 +2773,9 @@ int main(int argc, char* argv[]) {
     if (!parsedInput.loaded) {
         return 1;
     }
+    options.debug = parsedInput.debug;
     if (reportGrepSyntaxErrors(parsedInput.tasks)) {
+        pauseBeforeExit(options);
         return 1;
     }
 
@@ -2729,6 +2783,7 @@ int main(int argc, char* argv[]) {
     int inputCores = parsedInput.cores;
     const auto& inputVars = parsedInput.customVars;
     bool inputDryrun = parsedInput.dryrun;
+    bool inputDebug = parsedInput.debug;
     bool inputNogui = parsedInput.nogui;
     options.citationsOutput = parsedInput.citationsOutput;
     options.citationsOutputSpecified = parsedInput.citationsOutputSpecified;
@@ -2738,6 +2793,10 @@ int main(int argc, char* argv[]) {
         options.dryrun = true;
         std::cout << "Dry-run mode enabled by input header." << std::endl;
     }
+    if (inputDebug) {
+        options.debug = true;
+        std::cout << "Debug mode enabled by input header." << std::endl;
+    }
     if (inputNogui) {
         options.nogui = true;
         std::cout << "No-GUI mode enabled by input header." << std::endl;
@@ -2745,8 +2804,6 @@ int main(int argc, char* argv[]) {
 
     initializeColorOutput(options);
 
-    bool shouldPauseOnExit = options.dryrun;
-    
     // Merge input file variables with command line variables (command line takes precedence)
     for (const auto& var : inputVars) {
         if (options.customVars.find(var.first) == options.customVars.end()) {
@@ -2784,11 +2841,11 @@ int main(int argc, char* argv[]) {
             std::cerr << "  - Current directory: ./banewfn.rc" << std::endl;
             std::cerr << "  - Executable directory: <exe_dir>/banewfn.rc" << std::endl;
             std::cerr << "  - Home directory: ~/.bane/wfn/banewfn.rc" << std::endl;
-            pauseIfWindowsDryRun(shouldPauseOnExit);
+            pauseBeforeExit(options);
             return 1;
         }
     } else if (!runner.loadBaneWfnConfig(configFile, requiresWavefunction)) {
-        pauseIfWindowsDryRun(shouldPauseOnExit);
+        pauseBeforeExit(options);
         return 1;
     }
     
@@ -2806,10 +2863,10 @@ int main(int argc, char* argv[]) {
     
     // Execute all module tasks
     if (!runner.executeAllTasks(parsedInput.tasks, inpFile, wfnFile, cores, options)) {
-        pauseIfWindowsDryRun(shouldPauseOnExit);
+        pauseBeforeExit(options);
         return 1;
     }
 
-    pauseIfWindowsDryRun(shouldPauseOnExit);
+    pauseBeforeExit(options);
     return 0;
 }
