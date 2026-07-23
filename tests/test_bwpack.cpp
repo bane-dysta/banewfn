@@ -1,9 +1,9 @@
 #include "doctest.h"
 
-#include "bwpack_support.h"
-#include "citation.h"
-#include "config.h"
-#include "input.h"
+#include "bwpack/bwpack_support.h"
+#include "common/citation.h"
+#include "common/config.h"
+#include "common/input.h"
 #include "test_helpers.h"
 
 #include <iostream>

@@ -1,18 +1,15 @@
 cmake_minimum_required(VERSION 3.10)
 project(banewfn VERSION 1.5.5 LANGUAGES CXX)
 
-# C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Warnings (only for C++)
 add_compile_options(
     $<$<COMPILE_LANGUAGE:CXX>:-Wall>
     $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
 )
 
-# Static build option
 option(BUILD_STATIC "Build with static linking" ON)
 if(BUILD_STATIC)
     if(MINGW)
@@ -37,31 +34,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     enable_language(RC)
 endif()
 
-# Core sources shared by tools
-set(CORE_SOURCES
-    src/bwpack_support.cpp
-    src/citation.cpp
-    src/config.cpp
-    src/grep_dsl.cpp
-    src/grep_engine.cpp
-    src/input.cpp
-    src/utils.cpp
-    src/inline_conf.cpp
-)
-
-set(CORE_HEADERS
-    src/bwpack_support.h
-    src/citation.h
-    src/config.h
-    src/grep_dsl.h
-    src/grep_engine.h
-    src/input.h
-    src/utils.h
-    src/inline_conf.h
-)
-
-add_library(banewfn_core OBJECT ${CORE_SOURCES} ${CORE_HEADERS})
-
 # GCC 8 and older keep std::filesystem in a separate support library.
 # Newer libstdc++/Clang/MSVC provide it through the normal C++ runtime.
 set(BANEWFN_FILESYSTEM_LIB)
@@ -69,155 +41,18 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_L
     list(APPEND BANEWFN_FILESYSTEM_LIB stdc++fs)
 endif()
 
-set(BANEWFN_WINDOWS_RESOURCE)
-set(BWPACK_WINDOWS_RESOURCE)
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    list(APPEND BANEWFN_WINDOWS_RESOURCE src/banewfn.rc)
-    list(APPEND BWPACK_WINDOWS_RESOURCE src/bwpack.rc)
-endif()
+include(GNUInstallDirs)
 
-# banewfn (main runner)
-add_executable(banewfn
-    $<TARGET_OBJECTS:banewfn_core>
-    src/banewfn.cpp
-    src/ui.cpp
-    src/ui.h
-    ${BANEWFN_WINDOWS_RESOURCE}
-)
-
-# bwpack (bundler)
-add_executable(bwpack
-    $<TARGET_OBJECTS:banewfn_core>
-    src/bwpack.cpp
-    ${BWPACK_WINDOWS_RESOURCE}
-)
-
-target_link_libraries(banewfn PRIVATE ${BANEWFN_FILESYSTEM_LIB})
-target_link_libraries(bwpack PRIVATE ${BANEWFN_FILESYSTEM_LIB})
-
-# Output directory
-set_target_properties(banewfn bwpack PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-)
+add_subdirectory(src)
+add_subdirectory(apps)
 
 if(BANEWFN_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-include(GNUInstallDirs)
-
-set(BANEWFN_DEFAULT_MULTIWFN_EXEC "Multiwfn" CACHE STRING
-    "Default Multiwfn executable written to generated banewfn.rc")
-set(BANEWFN_DEFAULT_CORES "32" CACHE STRING
-    "Default core count written to generated banewfn.rc")
-
-# Windows release/installer staging intentionally keeps the historical portable
-# layout because inno_setup/banewfn.iss consumes that tree directly.
-# Native Unix installs use the normal FHS-style layout:
-#   <prefix>/bin                     executables
-#   <prefix>/share/banewfn/conf      module configuration
-#   <prefix>/share/banewfn/scripts   helper scripts
-#   <prefix>/share/doc/banewfn       manual PDFs
-#   <prefix>/etc/banewfn/banewfn.rc  default system config
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    set(BANEWFN_INSTALL_BINDIR ".")
-    set(BANEWFN_INSTALL_CONFDIR "conf")
-    set(BANEWFN_INSTALL_SCRIPTSDIR "scripts")
-    set(BANEWFN_INSTALL_DOCDIR "docs/out")
-    set(BANEWFN_INSTALL_RCDIR ".")
-    set(BANEWFN_GENERATED_CONFPATH "conf")
-else()
-    set(BANEWFN_INSTALL_BINDIR "${CMAKE_INSTALL_BINDIR}")
-    set(BANEWFN_INSTALL_CONFDIR "${CMAKE_INSTALL_DATADIR}/banewfn/conf")
-    set(BANEWFN_INSTALL_SCRIPTSDIR "${CMAKE_INSTALL_DATADIR}/banewfn/scripts")
-    set(BANEWFN_INSTALL_DOCDIR "${CMAKE_INSTALL_DOCDIR}")
-    set(BANEWFN_INSTALL_RCDIR "${CMAKE_INSTALL_SYSCONFDIR}/banewfn")
-    set(BANEWFN_GENERATED_CONFPATH "${CMAKE_INSTALL_FULL_DATADIR}/banewfn/conf")
-
-    target_compile_definitions(banewfn_core PRIVATE
-        BANEWFN_SYSTEM_RC_PATH="${CMAKE_INSTALL_FULL_SYSCONFDIR}/banewfn/banewfn.rc"
-        BANEWFN_SYSTEM_SHARE_RC_PATH="${CMAKE_INSTALL_FULL_DATADIR}/banewfn/conf/banewfn.rc"
-    )
-endif()
-
-set(BANEWFN_GENERATED_RC "${CMAKE_CURRENT_BINARY_DIR}/banewfn.rc")
-file(WRITE "${BANEWFN_GENERATED_RC}"
-    "Multiwfn_exec=${BANEWFN_DEFAULT_MULTIWFN_EXEC}\n"
-    "confpath=${BANEWFN_GENERATED_CONFPATH}\n"
-    "cores=${BANEWFN_DEFAULT_CORES}\n"
-    "citations_output=references.bib\n"
-)
-
-install(TARGETS banewfn bwpack
-    RUNTIME DESTINATION "${BANEWFN_INSTALL_BINDIR}"
-)
-
-if(IS_DIRECTORY "${BANEWFN_PACKAGE_CONF_SOURCE}")
-    install(DIRECTORY "${BANEWFN_PACKAGE_CONF_SOURCE}/"
-        DESTINATION "${BANEWFN_INSTALL_CONFDIR}"
-    )
-    # Keep a fallback rc beside the installed module configs; the system rc in
-    # etc remains the normal override point for Linux installs.
-    install(FILES "${BANEWFN_GENERATED_RC}"
-        DESTINATION "${BANEWFN_INSTALL_CONFDIR}"
-    )
-else()
-    message(WARNING "banewfn: conf source directory does not exist and will not be installed: ${BANEWFN_PACKAGE_CONF_SOURCE}")
-endif()
-
-install(FILES "${BANEWFN_GENERATED_RC}"
-    DESTINATION "${BANEWFN_INSTALL_RCDIR}"
-)
-
-if(IS_DIRECTORY "${BANEWFN_PACKAGE_SCRIPT_SOURCE}")
-    install(DIRECTORY "${BANEWFN_PACKAGE_SCRIPT_SOURCE}/"
-        DESTINATION "${BANEWFN_INSTALL_SCRIPTSDIR}"
-        PATTERN "release" EXCLUDE
-    )
-else()
-    message(WARNING "banewfn: scripts source directory does not exist and will not be installed: ${BANEWFN_PACKAGE_SCRIPT_SOURCE}")
-endif()
-
-if(IS_DIRECTORY "${BANEWFN_PACKAGE_DOC_SOURCE}")
-    file(GLOB BANEWFN_PACKAGE_MANUALS "${BANEWFN_PACKAGE_DOC_SOURCE}/${BANEWFN_PACKAGE_DOC_PATTERN}")
-    if(BANEWFN_PACKAGE_MANUALS)
-        install(DIRECTORY "${BANEWFN_PACKAGE_DOC_SOURCE}/"
-            DESTINATION "${BANEWFN_INSTALL_DOCDIR}"
-            FILES_MATCHING
-            PATTERN "${BANEWFN_PACKAGE_DOC_PATTERN}"
-        )
-    else()
-        message(WARNING "banewfn: no manuals matched ${BANEWFN_PACKAGE_DOC_PATTERN} under ${BANEWFN_PACKAGE_DOC_SOURCE}; docs will be empty in packages")
-    endif()
-else()
-    message(WARNING "banewfn: docs source directory does not exist and will not be installed: ${BANEWFN_PACKAGE_DOC_SOURCE}")
-endif()
-
-# Packaging (CPack)
-set(CPACK_PACKAGE_NAME "banewfn")
-set(CPACK_PACKAGE_VENDOR "Bane Dysta")
-set(CPACK_PACKAGE_CONTACT "https://github.com/bane-dysta/banewfn")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "BaneWfn release bundle")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_VERBATIM_VARIABLES YES)
-set(CPACK_MONOLITHIC_INSTALL ON)
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    set(BANEWFN_PACKAGE_PLATFORM "windows-x86_64")
-    set(CPACK_GENERATOR "ZIP")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(BANEWFN_PACKAGE_PLATFORM "linux-x86_64")
-    set(CPACK_GENERATOR "STGZ")
-else()
-    string(TOLOWER "${CMAKE_SYSTEM_NAME}" BANEWFN_SYSTEM_NAME_LOWER)
-    set(BANEWFN_PACKAGE_PLATFORM "${BANEWFN_SYSTEM_NAME_LOWER}-${CMAKE_SYSTEM_PROCESSOR}")
-    set(CPACK_GENERATOR "TGZ")
-endif()
-
-set(CPACK_PACKAGE_FILE_NAME "banewfn-${PROJECT_VERSION}-${BANEWFN_PACKAGE_PLATFORM}")
-
-include(CPack)
+include("${CMAKE_SOURCE_DIR}/cmake/BaneWfnInstall.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/BaneWfnPackaging.cmake")
 
 message(STATUS "banewfn: Building with C++${CMAKE_CXX_STANDARD}")
 if(BUILD_STATIC)

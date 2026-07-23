@@ -1,6 +1,6 @@
 #include "doctest.h"
 
-#include "inline_conf.h"
+#include "common/inline_conf.h"
 #include "test_helpers.h"
 
 #include <map>

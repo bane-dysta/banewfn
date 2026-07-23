@@ -1,0 +1,14 @@
+wfn=*.fchk
+[charge]
+%process
+hirshfeld
+%command
+move ${input}.chg ${input}_hirshfeld.chg
+end
+
+[charge]
+%process
+adch
+%command
+move ${input}.chg ${input}_adch.chg
+end

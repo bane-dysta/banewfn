@@ -1,6 +1,6 @@
 #include "doctest.h"
 
-#include "citation.h"
+#include "common/citation.h"
 #include "test_helpers.h"
 
 #include <iostream>

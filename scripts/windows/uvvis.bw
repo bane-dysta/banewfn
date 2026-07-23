@@ -1,0 +1,10 @@
+wfn=*.log
+[spectrum]
+%process
+    uvvis-data
+end
+
+%command
+move spectrum_curve.txt ${input}_spectrum_curve.txt
+move spectrum_line.txt ${input}_spectrum_line.txt
+end

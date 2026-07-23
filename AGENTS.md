@@ -30,7 +30,7 @@
 - 代码进行BUG修复后，更新小版本号（如：1.3.0 → 1.3.1）
 - 代码进行功能性修改后，更新大版本号（如：1.3.0 → 1.4.0）
 - 如果用户没有明确声明，不要自主修改主版本号（1.3.0 -x→ 2.0.0）
-- 需要更新版本号的位置有：用户手册; CMakeLists.txt; README.md; src/ui.cpp; src/bwpack.rc; src/banewfn.rc; inno_setup/banetask.iss
+- 需要更新版本号的位置有：用户手册; CMakeLists.txt; README.md; src/common/ui.cpp; packaging/windows/resources/bwpack.rc; packaging/windows/resources/banewfn.rc; packaging/windows/inno/banewfn.iss
 - 更新历史写进docs/UPDATE_HISTORY.md
 
 ## Testing

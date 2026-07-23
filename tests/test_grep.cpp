@@ -1,8 +1,8 @@
 #include "doctest.h"
 
-#include "grep_dsl.h"
-#include "grep_engine.h"
-#include "input.h"
+#include "common/grep_dsl.h"
+#include "banewfn/grep_engine.h"
+#include "common/input.h"
 #include "test_helpers.h"
 
 #include <filesystem>

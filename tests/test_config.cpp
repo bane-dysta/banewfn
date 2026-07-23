@@ -1,8 +1,8 @@
 #include "doctest.h"
 
-#include "config.h"
+#include "common/config.h"
 #include "test_helpers.h"
-#include "utils.h"
+#include "common/utils.h"
 
 #include <map>
 #include <vector>

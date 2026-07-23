@@ -1,6 +1,6 @@
 #include "doctest.h"
 
-#include "input.h"
+#include "common/input.h"
 #include "test_helpers.h"
 
 #include <map>

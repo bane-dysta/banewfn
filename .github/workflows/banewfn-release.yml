@@ -149,14 +149,8 @@ jobs:
 
       - name: Stage Windows installer tree
         run: |
-          set -euxo pipefail
-          STAGE_DIR=release/windows-release/stage
-          rm -rf "$STAGE_DIR"
-          mkdir -p "$STAGE_DIR"
-
-          cmake --install build/windows-release --prefix "$STAGE_DIR"
-
-          find "$STAGE_DIR" -maxdepth 4 -type f | sort
+          packaging/automation/stage_windows_release.sh
+          find release/windows-release/stage -maxdepth 4 -type f | sort
 
       - name: Show Windows release files
         run: find release/windows-release -maxdepth 3 -type f | sort
@@ -175,8 +169,8 @@ jobs:
           if-no-files-found: error
           path: |
             release/windows-release/stage/**
-            inno_setup/**
-            src/resource/mothwfn.ico
+            packaging/windows/inno/**
+            packaging/windows/resources/**
 
   build-windows-installer:
     name: Build Windows installer
@@ -257,7 +251,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Package BWC generator skill
-        run: ./scripts/release/stage_skill.sh
+        run: ./packaging/automation/stage_skill.sh
 
       - name: Show skill package files
         run: find dist/skill -maxdepth 3 -type f | sort
@@ -285,7 +279,7 @@ jobs:
           node-version: '20'
 
       - name: Package VS Code extension
-        working-directory: plugins/vsc/extension
+        working-directory: extras/vscode-extension
         run: |
           set -euxo pipefail
           VERSION="$(node -p "require('./package.json').version")"

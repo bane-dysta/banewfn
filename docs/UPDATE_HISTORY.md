@@ -60,5 +60,6 @@
 - VS Code 扩展 1.5.0 增加 `citations_output` 头部字段高亮
 
 # 1.5.5 - 26.7.23
+- 重构仓库目录为 `apps/`、`src/`、`packaging/` 与 `extras/`，保持 CLI、安装布局和发布产物不变。
 - BibTeX 导出会先读取并合并同一路径下已有的 BaneWfn 引用，按规范化 DOI、`baneid` 或 BibTeX key 去重，保留原有顺序并追加本次新条目。
 - BibTeX 新增 `baneid`、`banetext` 与 `banereasonN` 扩展字段，供 BaneTask 汇总分析用途与渲染引用；自动软件用途不会混入分析名称。
