@@ -11,13 +11,11 @@ endif()
 add_executable(banewfn ${BANEWFN_APP_SOURCES})
 target_link_libraries(banewfn PRIVATE
     banewfn_core
-    ${BANEWFN_FILESYSTEM_LIB}
 )
 
 add_executable(bwpack ${BWPACK_APP_SOURCES})
 target_link_libraries(bwpack PRIVATE
     bwpack_core
-    ${BANEWFN_FILESYSTEM_LIB}
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")

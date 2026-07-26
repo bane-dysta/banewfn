@@ -26,6 +26,10 @@ add_library(banewfn_common STATIC
 )
 target_include_directories(banewfn_common PUBLIC "${BANEWFN_SRC_ROOT}")
 
+if(BANEWFN_FILESYSTEM_LIB)
+    target_link_libraries(banewfn_common PUBLIC ${BANEWFN_FILESYSTEM_LIB})
+endif()
+
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_compile_definitions(banewfn_common PRIVATE
         BANEWFN_SYSTEM_RC_PATH="${CMAKE_INSTALL_FULL_SYSCONFDIR}/banewfn/banewfn.rc"

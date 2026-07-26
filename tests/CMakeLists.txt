@@ -17,7 +17,6 @@ target_link_libraries(banewfn_tests PRIVATE
     banewfn_core
     bwpack_core
     banewfn_common
-    ${BANEWFN_FILESYSTEM_LIB}
 )
 
 set_target_properties(banewfn_tests PROPERTIES
